@@ -10,7 +10,8 @@
 #define MODULE MODULE_NAME "."
 /*
  * Terminology:
- * decl = declaration = "class X(BASE)", this creates a new scope in python
+ * decl = declaration = "@cara.define\ndef X(): return BASE(...)", this
+ *    creates a new scope in python
  * definition = "y = [Const, Annotation, Field, ...](args)", other than field,
  *    these define reusable variables in the current scope or, in the global
  *    scope, all children scopes.
@@ -127,6 +128,11 @@ class CapnpcPython : public BaseGenerator {
     Indent indent;
   };
   std::vector<DeclInfo> decls_;
+  struct EnumerantInfo {
+    std::string name, ordinal;
+    kj::Vector<kj::String> annotations;
+  };
+  std::vector<EnumerantInfo> enumerants_;
 
   // names 'defined' in the class
   // hash_set<std::string> defined_names_;
@@ -349,7 +355,9 @@ class CapnpcPython : public BaseGenerator {
   }
 
   void print_decl(DeclInfo& decl, DeclInfo& parent) {
-    outputLine(kj::str("class ", check_keyword(decl.name), "(" MODULE, decl.base, "):"));
+    outputLine(kj::str("@" MODULE "define"));
+    outputLine(kj::str("def ", check_keyword(decl.name), "():"));
+    // MODULE, decl.base, "):"));
     ++indent_;
     outputted_lines_ = 0;
     // now output sub-decls
@@ -361,7 +369,7 @@ class CapnpcPython : public BaseGenerator {
       print_line(decl, line);
     }
     if (outputted_lines_ == 0) {
-      outputLine("pass");
+      outputLine(kj::str("return ", decl.base, "(name=\"", decl.name, "\")"));
     }
     --indent_;
     printf("defining %s inside %s\n", decl.name.c_str(), parent.name.c_str());
@@ -404,7 +412,9 @@ class CapnpcPython : public BaseGenerator {
     auto line = kj::strTree(
         "(", enumerant.getOrdinal(), ", \"", enumerant.getProto().getName(),
         "\"", get_stored_annotations(/* include_key= */ false), ")");
-    define_name(kj::str(enumerant.getProto().getName()), line.flatten());
+    enumerants_.emplace_back(EnumerantInfo {
+        kj::str(enumerant.getProto().getName()).cStr(), kj::str(enumerant.getOrdinal()).cStr(),
+        std::move(last_annotations_)});
     return false;
   }
 
