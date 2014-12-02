@@ -1,8 +1,9 @@
 #include <algorithm>
 #include <map>
 #include <memory>
-#include <unordered_set>
 #include <set>
+#include <stack>
+#include <unordered_set>
 #include <vector>
 #include "generic.h"
 
@@ -23,63 +24,10 @@
 
 template <typename T> using hash_set = std::unordered_set<T>;
 
-struct Indent {
-  uint amount;
-  const static int INDENT = 2;
-  Indent() = default;
-  inline Indent(int amount): amount(amount * INDENT) {}
-
-  inline Indent& operator++() { amount += INDENT; return *this; }
-  inline Indent& operator--() { amount -= INDENT; return *this; }
-
-  inline Indent operator+(Indent& other) { return Indent(amount + other.amount); }
-  inline Indent operator+(int other) { return Indent(amount + other * INDENT); }
-  inline Indent operator-(Indent& other) { return Indent(amount - other.amount); }
-  inline Indent operator-(int other) { return Indent(amount - other * INDENT); }
-  inline bool operator==(const Indent& other) const { return amount == other.amount; }
-  inline bool operator!=(const Indent& other) const { return amount != other.amount; }
-
-  struct Iterator {
-    uint i;
-    Iterator() = default;
-    inline Iterator(uint i): i(i) {}
-    inline char operator*() const { return ' '; }
-    inline Iterator& operator++() { ++i; return *this; }
-    inline Iterator operator++(int) { Iterator result = *this; ++i; return result; }
-    inline bool operator==(const Iterator& other) const { return i == other.i; }
-    inline bool operator!=(const Iterator& other) const { return i != other.i; }
-  };
-
-  inline size_t size() const { return amount; }
-
-  inline Iterator begin() const { return Iterator(0); }
-  inline Iterator end() const { return Iterator(amount); }
-};
-
-kj::String KJ_STRINGIFY(const Indent& indent) {
-  kj::Vector<char> chars(indent.size());
-  for (auto ch : indent) {
-    chars.add(ch);
-  }
-  return kj::heapString(chars.begin(), chars.size());
-}
-
-std::string stringify(const hash_set<std::string>& set) {
-  std::string out("[");
-  int count = 0;
-  for (auto it = set.begin(); it != set.end(); ++it, ++count) {
-    out.append(*it);
-    if (it != set.begin()) {
-      out.append(", ");
-    }
-  }
-  out.append("]");
-  return std::move(out);
-}
-
-kj::String pop_back(std::vector<kj::String>& vect) {
-  kj::String result = kj::str(vect.back());
-  vect.pop_back();
+typedef std::stack<kj::String, std::vector<kj::String>> string_stack;
+kj::String pop_back(string_stack& vect) {
+  kj::String result = kj::str(vect.top());
+  vect.pop();
   return result;
 }
 
@@ -155,15 +103,21 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
 
 class CapnpcCara : public BaseGenerator {
  public:
-  CapnpcCara(SchemaLoader &schemaLoader)
-      : BaseGenerator(schemaLoader) {
-    // start_decl("", "");
-  }
-
+  CapnpcCara(SchemaLoader& loader)
+    : BaseGenerator(loader) {}
  private:
   constexpr static const char FILE_SUFFIX[] = ".py";
   FILE* fd_;
   std::vector<std::string> decl_stack_;
+
+  string_stack last_type_;
+  string_stack last_value_;
+  kj::Vector<kj::String> annotations_;
+  kj::String stored_annotations_ = kj::str("");
+
+  std::vector<kj::String> fields_;
+  std::vector<kj::String> enumerants_;
+  std::vector<kj::String> methods_;
 
   bool pre_visit_file(Schema schema, schema::CodeGeneratorRequest::RequestedFile::Reader requestedFile) override {
     kj::String outputFilename;
@@ -208,13 +162,13 @@ class CapnpcCara : public BaseGenerator {
     return false;
   }
 
-  bool post_visit_const_decl(Schema, schema::Node::NestedNode::Reader decl) {
-    finish_decl(kj::str("name=\"", decl.getName(), "\", type=", pop_back(last_type_),
-          ", value=", pop_back(last_value_), get_stored_annotations()));
+  bool post_visit_const_decl(Schema, schema::Node::NestedNode::Reader) {
+    finish_decl("type=", pop_back(last_type_),
+          ", value=", pop_back(last_value_), get_stored_annotations());
     return false;
   }
 
-  bool post_visit_annotation_decl(Schema schema, schema::Node::NestedNode::Reader decl) {
+  bool post_visit_annotation_decl(Schema schema, schema::Node::NestedNode::Reader) {
     auto proto = schema.getProto().getAnnotation();
     int count = 0;
     kj::Vector<kj::String> targets;
@@ -230,9 +184,6 @@ class CapnpcCara : public BaseGenerator {
       cog.outl('  ++count;')
       cog.outl('  targets.add(kj::str("\\"%s\\""));' % target)
       cog.outl('}')
-      # Then if it matches everything, use Annotation.all
-      # Otherwise, add each one to the line and count--
-      # Only output an extra , if count > 0.
     ]]]*/
     static const int NUM_TARGETS = 13;
     if (proto.getTargetsStruct()) {
@@ -288,62 +239,52 @@ class CapnpcCara : public BaseGenerator {
       targets.add(kj::str("\"method\""));
     }
     //[[[end]]]
-    auto line = kj::strTree(
-          "name=\"", decl.getName(), "\", applies_to=");
+    auto line = kj::strTree("type=", pop_back(last_type_), ", applies_to=");
     if (count == NUM_TARGETS) {
+      // Then if it matches everything, use Annotation.all
       line = kj::strTree(kj::mv(line), MODULE "Annotation.ALL");
     } else {
+      // Otherwise, output each target.
       line = kj::strTree(kj::mv(line), "[", kj::strArray(targets, ", "), "]");
     }
-    line = kj::strTree(kj::mv(line), get_stored_annotations(), ", type=", pop_back(last_type_));
-    finish_decl(line.flatten());
+    line = kj::strTree(kj::mv(line), get_stored_annotations());
+    finish_decl(line);
     return false;
   }
 
-  bool post_visit_enum_decl(Schema, schema::Node::NestedNode::Reader decl) {
-    finish_decl(kj::str("name=\"", decl.getName(), "\", enumerants=[",
-          kj::strArray(enumerants_, ", "), "]", get_stored_annotations()));
+  bool post_visit_enum_decl(Schema, schema::Node::NestedNode::Reader) {
+    finish_decl("enumerants=[", kj::strArray(enumerants_, ", "), "]",
+          get_stored_annotations());
     return false;
   }
 
-  bool post_visit_struct_decl(Schema, schema::Node::NestedNode::Reader decl) {
-    finish_decl(kj::str("name=\"", decl.getName(), "\", fields=[",
-          kj::strArray(name_fields("Field"), ", "), "]", get_stored_annotations()));
+  bool post_visit_struct_decl(Schema, schema::Node::NestedNode::Reader) {
+    finish_decl(
+        "fields=[", get_fields("Field"), "]", get_stored_annotations());
     return false;
   }
 
-  bool post_visit_interface_decl(Schema, schema::Node::NestedNode::Reader decl) {
-    finish_decl(kj::str("name=\"", decl.getName(), "\", methods=[",
-          kj::strArray(methods_, ", "), "]", get_stored_annotations()));
+  bool post_visit_interface_decl(Schema, schema::Node::NestedNode::Reader) {
+    finish_decl("methods=[", kj::strArray(methods_, ", "), "]",
+          get_stored_annotations());
     return false;
   }
 
-  // TODO: Add Struct and Interface
-
-  std::vector<kj::String> last_type_;
-  std::vector<kj::String> last_value_;
-  std::vector<kj::String> fields_;
-  kj::Vector<kj::String> annotations_;
-  kj::String stored_annotations_ = kj::str("");
-
-  std::vector<std::string> enumerants_;
-  std::vector<std::string> methods_;
-
-
-  void finish_decl(const kj::String& value) {
+  template<typename... Args>
+  void finish_decl(Args&&... args) {
     outputLine(kj::str(kj::strArray(decl_stack_, "."),
-          ".FinishDeclaration(", value, ")"));
+          ".FinishDeclaration(", std::forward<Args>(args)..., ")"));
   }
 
   bool post_visit_enumerant(Schema, EnumSchema::Enumerant enumerant) {
-    auto line = kj::strTree(
+    enumerants_.emplace_back(kj::str(
         MODULE "Enumerant(name=\"", enumerant.getProto().getName(),
-        "\", ordinal=", enumerant.getOrdinal(), get_stored_annotations(), ")");
-    enumerants_.emplace_back(line.flatten().cStr());
+        "\", ordinal=", enumerant.getOrdinal(), get_stored_annotations(),
+        ")"));
     return false;
   }
 
-  kj::StringTree get_stored_annotations(/*bool include_key=true*/) {
+  kj::StringTree get_stored_annotations() {
     auto stored = std::move(stored_annotations_);
     if (stored.size() > 0) {
         return kj::strTree(", annotations=", stored);
@@ -352,20 +293,19 @@ class CapnpcCara : public BaseGenerator {
   }
 
   bool post_visit_struct_field(StructSchema, StructSchema::Field field) {
-    auto decl = kj::strTree("(id=", field.getIndex(), ", name=\"",
+    fields_.emplace_back(kj::str("(id=", field.getIndex(), ", name=\"",
         field.getProto().getName(), "\", type=", pop_back(last_type_),
-        get_stored_annotations(), ")");
-    fields_.emplace_back(decl.flatten());
+        get_stored_annotations(), ")"));
     return false;
   }
 
-  std::vector<kj::String> name_fields(std::string&& name) {
+  kj::String get_fields(std::string&& name) {
     std::vector<kj::String> fields;
     for (auto &field : fields_) {
       fields.emplace_back(kj::str(MODULE, name, field));
     }
     fields_.clear();
-    return fields;
+    return kj::strArray(fields, ", ");
   }
 
   bool traverse_method(Schema schema, InterfaceSchema::Method method) override {
@@ -378,20 +318,17 @@ class CapnpcCara : public BaseGenerator {
     // Params
     TRAVERSE(param_list, interface, kj::str("parameters"), method.getParamType());
     line = kj::strTree(
-        kj::mv(line), ", input_params=[",
-        kj::strArray(name_fields("Param"), ", "), "]");
+        kj::mv(line), ", input_params=[", get_fields("Param"), "]");
 
     // Results
     TRAVERSE(param_list, interface, kj::str("results"), method.getResultType());
     line = kj::strTree(
-        kj::mv(line), ", output_params=[",
-        kj::strArray(name_fields("Param"), ", "), "]");
+        kj::mv(line), ", output_params=[", get_fields("Param"), "]");
 
     // Annotations
     TRAVERSE(annotations, schema, methodProto.getAnnotations());
     line = kj::strTree(kj::mv(line), get_stored_annotations(), ")");
-    methods_.emplace_back(line.flatten().cStr());
-    // printf("method %s\n", line.flatten().cStr());
+    methods_.emplace_back(line.flatten());
     return false;
   }
 
@@ -415,77 +352,77 @@ class CapnpcCara : public BaseGenerator {
       types.extend('uint%s' % size for size in [8, 16, 32, 64])
       for type in types:
         cog.outl('case schema::Type::%s:' % type.upper())
-        cog.outl('  last_type_.emplace_back(kj::str(MODULE "%s"));' % type.title())
+        cog.outl('  last_type_.push(kj::str(MODULE "%s"));' % type.title())
         cog.outl('  break;')
       ]]]*/
       case schema::Type::VOID:
-        last_type_.emplace_back(kj::str(MODULE "Void"));
+        last_type_.push(kj::str(MODULE "Void"));
         break;
       case schema::Type::BOOL:
-        last_type_.emplace_back(kj::str(MODULE "Bool"));
+        last_type_.push(kj::str(MODULE "Bool"));
         break;
       case schema::Type::TEXT:
-        last_type_.emplace_back(kj::str(MODULE "Text"));
+        last_type_.push(kj::str(MODULE "Text"));
         break;
       case schema::Type::DATA:
-        last_type_.emplace_back(kj::str(MODULE "Data"));
+        last_type_.push(kj::str(MODULE "Data"));
         break;
       case schema::Type::FLOAT32:
-        last_type_.emplace_back(kj::str(MODULE "Float32"));
+        last_type_.push(kj::str(MODULE "Float32"));
         break;
       case schema::Type::FLOAT64:
-        last_type_.emplace_back(kj::str(MODULE "Float64"));
+        last_type_.push(kj::str(MODULE "Float64"));
         break;
       case schema::Type::INT8:
-        last_type_.emplace_back(kj::str(MODULE "Int8"));
+        last_type_.push(kj::str(MODULE "Int8"));
         break;
       case schema::Type::INT16:
-        last_type_.emplace_back(kj::str(MODULE "Int16"));
+        last_type_.push(kj::str(MODULE "Int16"));
         break;
       case schema::Type::INT32:
-        last_type_.emplace_back(kj::str(MODULE "Int32"));
+        last_type_.push(kj::str(MODULE "Int32"));
         break;
       case schema::Type::INT64:
-        last_type_.emplace_back(kj::str(MODULE "Int64"));
+        last_type_.push(kj::str(MODULE "Int64"));
         break;
       case schema::Type::UINT8:
-        last_type_.emplace_back(kj::str(MODULE "Uint8"));
+        last_type_.push(kj::str(MODULE "Uint8"));
         break;
       case schema::Type::UINT16:
-        last_type_.emplace_back(kj::str(MODULE "Uint16"));
+        last_type_.push(kj::str(MODULE "Uint16"));
         break;
       case schema::Type::UINT32:
-        last_type_.emplace_back(kj::str(MODULE "Uint32"));
+        last_type_.push(kj::str(MODULE "Uint32"));
         break;
       case schema::Type::UINT64:
-        last_type_.emplace_back(kj::str(MODULE "Uint64"));
+        last_type_.push(kj::str(MODULE "Uint64"));
         break;
       //[[[end]]]
       case schema::Type::LIST:
         TRAVERSE(type, schema, type.getList().getElementType());
-        last_type_.emplace_back(kj::str("List(", pop_back(last_type_), ")"));
+        last_type_.push(kj::str("List(", pop_back(last_type_), ")"));
         break;
       case schema::Type::ENUM: {
         auto enumSchema = schemaLoader.get(
             type.getEnum().getTypeId(), type.getEnum().getBrand(), schema);
         // TODO: Deal with generics here and the below types.
-        last_type_.emplace_back(kj::str(enumSchema.getShortDisplayName()));
+        last_type_.push(kj::str(enumSchema.getShortDisplayName()));
         break;
       }
       case schema::Type::INTERFACE: {
         auto ifaceSchema = schemaLoader.get(
             type.getInterface().getTypeId(), type.getInterface().getBrand(), schema);
-        last_type_.emplace_back(kj::str(ifaceSchema.getShortDisplayName()));
+        last_type_.push(kj::str(ifaceSchema.getShortDisplayName()));
         break;
       }
       case schema::Type::STRUCT: {
         auto structSchema = schemaLoader.get(
             type.getStruct().getTypeId(), type.getStruct().getBrand(), schema);
-        last_type_.emplace_back(kj::str(structSchema.getShortDisplayName()));
+        last_type_.push(kj::str(structSchema.getShortDisplayName()));
         break;
       }
       case schema::Type::ANY_POINTER:
-        last_type_.emplace_back(kj::str("AnyPointer"));
+        last_type_.push(kj::str(MODULE "AnyPointer"));
         break;
     }
     return true;
@@ -517,51 +454,51 @@ class CapnpcCara : public BaseGenerator {
       ] 
       for type, ctype, writer in types:
         cog.outl('case schema::Type::%s:' % type.upper())
-        cog.outl('  last_value_.emplace_back(kj::str(value.as<%s>()));' % (ctype))
+        cog.outl('  last_value_.push(kj::str(value.as<%s>()));' % (ctype))
         cog.outl('  break;')
       ]]]*/
       case schema::Type::BOOL:
-        last_value_.emplace_back(kj::str(value.as<bool>()));
+        last_value_.push(kj::str(value.as<bool>()));
         break;
       case schema::Type::INT64:
-        last_value_.emplace_back(kj::str(value.as<int64_t>()));
+        last_value_.push(kj::str(value.as<int64_t>()));
         break;
       case schema::Type::UINT64:
-        last_value_.emplace_back(kj::str(value.as<uint64_t>()));
+        last_value_.push(kj::str(value.as<uint64_t>()));
         break;
       case schema::Type::FLOAT32:
-        last_value_.emplace_back(kj::str(value.as<float>()));
+        last_value_.push(kj::str(value.as<float>()));
         break;
       case schema::Type::FLOAT64:
-        last_value_.emplace_back(kj::str(value.as<double>()));
+        last_value_.push(kj::str(value.as<double>()));
         break;
       case schema::Type::INT8:
-        last_value_.emplace_back(kj::str(value.as<int8_t>()));
+        last_value_.push(kj::str(value.as<int8_t>()));
         break;
       case schema::Type::INT16:
-        last_value_.emplace_back(kj::str(value.as<int16_t>()));
+        last_value_.push(kj::str(value.as<int16_t>()));
         break;
       case schema::Type::INT32:
-        last_value_.emplace_back(kj::str(value.as<int32_t>()));
+        last_value_.push(kj::str(value.as<int32_t>()));
         break;
       case schema::Type::UINT8:
-        last_value_.emplace_back(kj::str(value.as<uint8_t>()));
+        last_value_.push(kj::str(value.as<uint8_t>()));
         break;
       case schema::Type::UINT16:
-        last_value_.emplace_back(kj::str(value.as<uint16_t>()));
+        last_value_.push(kj::str(value.as<uint16_t>()));
         break;
       case schema::Type::UINT32:
-        last_value_.emplace_back(kj::str(value.as<uint32_t>()));
+        last_value_.push(kj::str(value.as<uint32_t>()));
         break;
       //[[[end]]]
       case schema::Type::VOID:
-        last_value_.emplace_back(kj::str("value"));
+        last_value_.push(kj::str("value"));
         break;
       case schema::Type::TEXT:
-        last_value_.emplace_back(kj::str("'", value.as<Text>(), "'"));
+        last_value_.push(kj::str("'", value.as<Text>(), "'"));
         break;
       case schema::Type::DATA:
-        last_value_.emplace_back(kj::str("b'", value.as<Data>(), "'"));
+        last_value_.push(kj::str("b'", value.as<Data>(), "'"));
         break;
       case schema::Type::LIST: {
         kj::Vector<kj::String> values;
@@ -571,14 +508,14 @@ class CapnpcCara : public BaseGenerator {
           visit_value_dynamic(schema, listType.getElementType(), element);
           values.add(pop_back(last_value_));
         }
-        last_value_.emplace_back(kj::str("[", kj::strArray(values, ", "), "]"));
+        last_value_.push(kj::str("[", kj::strArray(values, ", "), "]"));
         break;
       }
       case schema::Type::ENUM: {
         auto enumValue = value.as<DynamicEnum>();
-        last_value_.emplace_back(kj::str(enumValue.getSchema().getShortDisplayName()));
+        last_value_.push(kj::str(enumValue.getSchema().getShortDisplayName()));
         KJ_IF_MAYBE(enumerant, enumValue.getEnumerant()) {
-          last_value_.emplace_back(kj::str(
+          last_value_.push(kj::str(
               pop_back(last_value_), ".",
               check_keyword(enumerant->getProto().getName())));
         }
@@ -594,17 +531,17 @@ class CapnpcCara : public BaseGenerator {
             items.add(kj::str("\"", field.getProto().getName(), "\": ", pop_back(last_value_)));
           }
         }
-        last_value_.emplace_back(kj::str("{", kj::strArray(items, ", "), "}"));
+        last_value_.push(kj::str("{", kj::strArray(items, ", "), "}"));
         break;
       }
       case schema::Type::INTERFACE: {
-        last_value_.emplace_back(kj::str(
+        last_value_.push(kj::str(
             "interface? but that's not possible... how do you serialize an "
             "interface in a capnp file?"));
         break;
       }
       case schema::Type::ANY_POINTER:
-        last_value_.emplace_back(kj::str(
+        last_value_.push(kj::str(
             "any pointer? how do you serialize an anypointer in a capnp file"));
         break;
     }
@@ -622,51 +559,51 @@ class CapnpcCara : public BaseGenerator {
       types.update({'uint%d' % size: 'uint' for size in sizes32})
       for type, writer in sorted(types.items()):
         cog.outl('case schema::Type::%s:' % type.upper())
-        cog.outl('  last_value_.emplace_back(kj::str(value.get%s()));' % type.title())
+        cog.outl('  last_value_.push(kj::str(value.get%s()));' % type.title())
         cog.outl('  break;')
       ]]]*/
       case schema::Type::BOOL:
-        last_value_.emplace_back(kj::str(value.getBool()));
+        last_value_.push(kj::str(value.getBool()));
         break;
       case schema::Type::FLOAT32:
-        last_value_.emplace_back(kj::str(value.getFloat32()));
+        last_value_.push(kj::str(value.getFloat32()));
         break;
       case schema::Type::FLOAT64:
-        last_value_.emplace_back(kj::str(value.getFloat64()));
+        last_value_.push(kj::str(value.getFloat64()));
         break;
       case schema::Type::INT16:
-        last_value_.emplace_back(kj::str(value.getInt16()));
+        last_value_.push(kj::str(value.getInt16()));
         break;
       case schema::Type::INT32:
-        last_value_.emplace_back(kj::str(value.getInt32()));
+        last_value_.push(kj::str(value.getInt32()));
         break;
       case schema::Type::INT64:
-        last_value_.emplace_back(kj::str(value.getInt64()));
+        last_value_.push(kj::str(value.getInt64()));
         break;
       case schema::Type::INT8:
-        last_value_.emplace_back(kj::str(value.getInt8()));
+        last_value_.push(kj::str(value.getInt8()));
         break;
       case schema::Type::UINT16:
-        last_value_.emplace_back(kj::str(value.getUint16()));
+        last_value_.push(kj::str(value.getUint16()));
         break;
       case schema::Type::UINT32:
-        last_value_.emplace_back(kj::str(value.getUint32()));
+        last_value_.push(kj::str(value.getUint32()));
         break;
       case schema::Type::UINT64:
-        last_value_.emplace_back(kj::str(value.getUint64()));
+        last_value_.push(kj::str(value.getUint64()));
         break;
       case schema::Type::UINT8:
-        last_value_.emplace_back(kj::str(value.getUint8()));
+        last_value_.push(kj::str(value.getUint8()));
         break;
       //[[[end]]]
       case schema::Type::VOID:
-        last_value_.emplace_back(kj::str("void"));
+        last_value_.push(kj::str("void"));
         break;
       case schema::Type::TEXT:
-        last_value_.emplace_back(kj::str("'", value.getText(), "'"));
+        last_value_.push(kj::str("'", value.getText(), "'"));
         break;
       case schema::Type::DATA:
-        last_value_.emplace_back(kj::str("b'", value.getData(), "'"));
+        last_value_.push(kj::str("b'", value.getData(), "'"));
         break;
       case schema::Type::LIST: {
         kj::Vector<kj::String> values;
@@ -676,15 +613,15 @@ class CapnpcCara : public BaseGenerator {
           visit_value_dynamic(schema, listType.getElementType(), element);
           values.add(pop_back(last_value_));
         }
-        last_value_.emplace_back(kj::str("[", kj::strArray(values, ", "), "]"));
+        last_value_.push(kj::str("[", kj::strArray(values, ", "), "]"));
         break;
       }
       case schema::Type::ENUM: {
         auto enumerants = type.asEnum().getEnumerants();
-        last_value_.emplace_back(kj::str(type.asEnum().getShortDisplayName()));
+        last_value_.push(kj::str(type.asEnum().getShortDisplayName()));
         for (auto enumerant : enumerants) {
           if (enumerant.getIndex() == value.getEnum()) {
-            last_value_.emplace_back(kj::str(
+            last_value_.push(kj::str(
                 pop_back(last_value_), ".", enumerant.getProto().getName()));
             break;
           }
@@ -701,17 +638,17 @@ class CapnpcCara : public BaseGenerator {
             items.add(kj::str("\"", field.getProto().getName(), "\": ", pop_back(last_value_)));
           }
         }
-        last_value_.emplace_back(kj::str("{", kj::strArray(items, ", "), "}"));
+        last_value_.push(kj::str("{", kj::strArray(items, ", "), "}"));
         break;
       }
       case schema::Type::INTERFACE: {
-        last_value_.emplace_back(kj::str(
+        last_value_.push(kj::str(
             "interface? but that's not possible... how do you serialize an "
             "interface in a capnp file?"));
         break;
       }
       case schema::Type::ANY_POINTER: {
-        last_value_.emplace_back(kj::str(
+        last_value_.push(kj::str(
             "any pointer? how do you serialize an anypointer in a capnp file"));
         break;
       }
