@@ -300,6 +300,12 @@ class CapnpcCara : public BaseGenerator {
     return false;
   }
 
+  bool post_visit_struct_decl(Schema, schema::Node::NestedNode::Reader decl) {
+    finish_decl(kj::str("name=\"", decl.getName(), "\", fields=[",
+          kj::strArray(name_fields("Field"), ", "), "]", get_stored_annotations()));
+    return false;
+  }
+
   // TODO: Add Struct and Interface
 
   kj::String last_type_;
@@ -334,12 +340,20 @@ class CapnpcCara : public BaseGenerator {
   }
 
   bool post_visit_struct_field(StructSchema, StructSchema::Field field) {
-    auto name = check_keyword(field.getProto().getName());
     auto decl = kj::strTree("(id=", field.getIndex(), ", name=\"",
         field.getProto().getName(), "\", type=", last_type_,
         get_stored_annotations(), ")");
     fields_.emplace_back(decl.flatten());
     return false;
+  }
+
+  std::vector<kj::String> name_fields(std::string&& name) {
+    std::vector<kj::String> fields;
+    for (auto &field : fields_) {
+      fields.emplace_back(kj::str(MODULE, name, field));
+    }
+    fields_.clear();
+    return fields;
   }
 
   bool traverse_method(Schema schema, InterfaceSchema::Method method) override {
@@ -351,20 +365,15 @@ class CapnpcCara : public BaseGenerator {
         ", name=\"", proto.getName(), "\"");
     // Params
     TRAVERSE(param_list, interface, kj::str("parameters"), method.getParamType());
-    std::vector<kj::String> fields;
-    for (auto &field : fields_) {
-      fields.emplace_back(kj::str(MODULE "Param", field));
-    }
-    line = kj::strTree(kj::mv(line), ", input_params=[", kj::strArray(fields, ", "), "]");
+    line = kj::strTree(
+        kj::mv(line), ", input_params=[",
+        kj::strArray(name_fields("Param"), ", "), "]");
 
     // Results
-    fields_.clear();
-    fields.clear();
     TRAVERSE(param_list, interface, kj::str("results"), method.getResultType());
-    for (auto &field : fields_) {
-      fields.emplace_back(kj::str(MODULE "Param", field));
-    }
-    line = kj::strTree(kj::mv(line), ", output_params=[", kj::strArray(fields, ", "), "]");
+    line = kj::strTree(
+        kj::mv(line), ", output_params=[",
+        kj::strArray(name_fields("Param"), ", "), "]");
 
     // Annotations
     TRAVERSE(annotations, schema, methodProto.getAnnotations());
