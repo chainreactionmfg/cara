@@ -306,6 +306,12 @@ class CapnpcCara : public BaseGenerator {
     return false;
   }
 
+  bool post_visit_interface_decl(Schema, schema::Node::NestedNode::Reader decl) {
+    finish_decl(kj::str("name=\"", decl.getName(), "\", methods=[",
+          kj::strArray(methods_, ", "), "]", get_stored_annotations()));
+    return false;
+  }
+
   // TODO: Add Struct and Interface
 
   kj::String last_type_;
