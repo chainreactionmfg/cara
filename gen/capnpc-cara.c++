@@ -89,6 +89,50 @@ kj::String check_keyword(T&& input) {
   return kj::str(input);
 }
 
+class CapnpcCaraForwardDecls : public BaseGenerator {
+ public:
+  CapnpcCaraForwardDecls(SchemaLoader &schemaLoader, FILE* fd)
+    : BaseGenerator(schemaLoader), fd_(fd) {
+  }
+ private:
+  FILE* fd_;
+  template<typename T>
+  void outputDecl(std::string&& type, T&& name) {
+    fprintf(
+        fd_, "%s = " MODULE "%s(name=\"%s\")\n",
+        check_keyword(name).cStr(), type.c_str(), name.cStr());
+  }
+  /*[[[cog
+  decls = ['const', 'annotation', 'struct', 'enum', 'interface']
+  for decl in decls:
+    cog.outl('bool pre_visit_%s_decl(Schema, schema::Node::NestedNode::Reader decl) {' % decl)
+    cog.outl('  outputDecl("%s", decl.getName());' % decl.title())
+    cog.outl('  return false;')
+    cog.outl('}')
+  ]]]*/
+  bool pre_visit_const_decl(Schema, schema::Node::NestedNode::Reader decl) {
+    outputDecl("Const", decl.getName());
+    return false;
+  }
+  bool pre_visit_annotation_decl(Schema, schema::Node::NestedNode::Reader decl) {
+    outputDecl("Annotation", decl.getName());
+    return false;
+  }
+  bool pre_visit_struct_decl(Schema, schema::Node::NestedNode::Reader decl) {
+    outputDecl("Struct", decl.getName());
+    return false;
+  }
+  bool pre_visit_enum_decl(Schema, schema::Node::NestedNode::Reader decl) {
+    outputDecl("Enum", decl.getName());
+    return false;
+  }
+  bool pre_visit_interface_decl(Schema, schema::Node::NestedNode::Reader decl) {
+    outputDecl("Interface", decl.getName());
+    return false;
+  }
+  //[[[end]]]
+};
+
 class CapnpcPython : public BaseGenerator {
  public:
   CapnpcPython(SchemaLoader &schemaLoader)
@@ -105,16 +149,13 @@ class CapnpcPython : public BaseGenerator {
     kj::String name, params;
     hash_set<std::string> needed_names;
   };
-  std::vector<FieldInfo> last_fields_;
-  bool output_struct_fields_ = true;
-  kj::Vector<kj::String> param_list_;
-  kj::Vector<kj::String> last_annotations_;
+  std::vector<FieldInfo> fields_;
+  // bool output_struct_fields_ = true;
+  // kj::Vector<kj::String> param_list_;
+  kj::Vector<kj::String> annotations_;
   kj::String stored_annotations_ = kj::str("");
 
-  // Stack of declarations (
-  // tuple(
-  // declaration info (tuple(name, base)),
-  // vector of tuple(line, needed_names)))
+  // Stack of declarations
   struct LineInfo {
     std::string name, value;
     hash_set<std::string> needed_names;
@@ -122,23 +163,32 @@ class CapnpcPython : public BaseGenerator {
   struct DeclInfo {
     std::string name, base;
     hash_set<std::string> defined_names;
-    std::vector<LineInfo> lines;
+    // std::vector<LineInfo> lines;
     std::vector<DeclInfo> sub_decls;
-    std::vector<LineInfo> orphans;
+    // std::vector<LineInfo> orphans;
     Indent indent;
   };
   std::vector<DeclInfo> decls_;
+
+  // More specific decl infos
   struct EnumerantInfo {
-    std::string name, ordinal;
-    kj::Vector<kj::String> annotations;
+    // std::string name, ordinal;
+    // kj::Vector<kj::String> annotations;
+    std::string enumerant;
+    hash_set<std::string> needed_names;
   };
   std::vector<EnumerantInfo> enumerants_;
+  struct MethodInfo {
+    std::string method;
+    hash_set<std::string> needed_names;
+  };
+  std::vector<MethodInfo> methods_;
 
   // names 'defined' in the class
   // hash_set<std::string> defined_names_;
   hash_set<std::string> needed_names_;
 
-  bool pre_visit_file(Schema, schema::CodeGeneratorRequest::RequestedFile::Reader requestedFile) override {
+  bool pre_visit_file(Schema schema, schema::CodeGeneratorRequest::RequestedFile::Reader requestedFile) override {
     kj::String outputFilename;
     auto inputFilename = requestedFile.getFilename();
     KJ_IF_MAYBE(loc, inputFilename.findLast('.')) {
@@ -149,7 +199,18 @@ class CapnpcPython : public BaseGenerator {
     fd_ = fopen(outputFilename.cStr(), "w");
     indent_ = Indent(0);
 
+    CapnpcCaraForwardDecls decls(schemaLoader, fd_);
+    decls.traverse_file(schema, requestedFile);
+    fclose(fd_);
+    return true;
+
+
     outputLine("import " MODULE_NAME);
+    return false;
+  }
+
+  bool post_visit_file(Schema, schema::CodeGeneratorRequest::RequestedFile::Reader) override {
+    fclose(fd_);
     return false;
   }
 
@@ -293,7 +354,7 @@ class CapnpcPython : public BaseGenerator {
 
   void start_decl(std::string&& name, std::string&& base) {
     // push onto the stack.
-    decls_.emplace_back(DeclInfo {name, base, hash_set<std::string> {}, {}, {}, {}, Indent(decls_.size())});
+    decls_.emplace_back(DeclInfo {name, base, hash_set<std::string> {}, {}, Indent(decls_.size())});
     fflush(stdout);
   }
 
@@ -313,25 +374,25 @@ class CapnpcPython : public BaseGenerator {
     // print_orphans(decls_.back());
   }
 
-  void print_orphans(DeclInfo& decl) {
-    while (1) {
-      size_t num_defined_names = decl.defined_names.size();
-      printf("orphan count %s -- %zu\n", decl.name.c_str(), decl.orphans.size());
-      // Attempt to print out orphans immediately?
-      for (auto it = decl.orphans.begin(); it != decl.orphans.end(); ++it) {
-        printf("orphan from %s: %s = %s\n", decl.name.c_str(), it->name.c_str(), it->value.c_str());
-        if (needed_names_defined(decl, it->needed_names)) {
-          print_line(decl, *it);
-          it = decl.orphans.erase(it);
-        }
-      }
-      if (num_defined_names == decl.defined_names.size()) {
-        // No new names, stop looping.
-        return;
-      }
-      // New names defined, look for new orphans to print out!
-    }
-  }
+  // void print_orphans(DeclInfo& decl) {
+  //   while (1) {
+  //     size_t num_defined_names = decl.defined_names.size();
+  //     printf("orphan count %s -- %zu\n", decl.name.c_str(), decl.orphans.size());
+  //     // Attempt to print out orphans immediately?
+  //     for (auto it = decl.orphans.begin(); it != decl.orphans.end(); ++it) {
+  //       printf("orphan from %s: %s = %s\n", decl.name.c_str(), it->name.c_str(), it->value.c_str());
+  //       if (needed_names_defined(decl, it->needed_names)) {
+  //         print_line(decl, *it);
+  //         it = decl.orphans.erase(it);
+  //       }
+  //     }
+  //     if (num_defined_names == decl.defined_names.size()) {
+  //       // No new names, stop looping.
+  //       return;
+  //     }
+  //     // New names defined, look for new orphans to print out!
+  //   }
+  // }
 
   bool needed_names_defined(DeclInfo& decl, hash_set<std::string> needed_names) {
     for (auto& name : needed_names) {
@@ -345,14 +406,14 @@ class CapnpcPython : public BaseGenerator {
     return true;
   }
 
-  void move_orphans(DeclInfo& back, DeclInfo& parent) {
-    printf("orphan count %s : %zu\n", back.name.c_str(), back.orphans.size());
-    for (auto& orphan : back.orphans) {
-      printf("\nmoving orphan %s: %s\n\n", back.name.c_str(), orphan.name.c_str());
-      orphan.name = back.name + "." + orphan.name;
-      parent.orphans.emplace_back(orphan);
-    }
-  }
+  // void move_orphans(DeclInfo& back, DeclInfo& parent) {
+  //   printf("orphan count %s : %zu\n", back.name.c_str(), back.orphans.size());
+  //   for (auto& orphan : back.orphans) {
+  //     printf("\nmoving orphan %s: %s\n\n", back.name.c_str(), orphan.name.c_str());
+  //     orphan.name = back.name + "." + orphan.name;
+  //     parent.orphans.emplace_back(orphan);
+  //   }
+  // }
 
   void print_decl(DeclInfo& decl, DeclInfo& parent) {
     outputLine(kj::str("@" MODULE "define"));
@@ -365,23 +426,23 @@ class CapnpcPython : public BaseGenerator {
       print_decl(sub_decl, decl);
     }
     // and now our own definitions
-    for (auto& line : decl.lines) {
-      print_line(decl, line);
-    }
+    // for (auto& line : decl.lines) {
+    //   print_line(decl, line);
+    // }
     if (outputted_lines_ == 0) {
       outputLine(kj::str("return ", decl.base, "(name=\"", decl.name, "\")"));
     }
     --indent_;
     printf("defining %s inside %s\n", decl.name.c_str(), parent.name.c_str());
     parent.defined_names.emplace(decl.name);
-    move_orphans(decl, parent);
+    // move_orphans(decl, parent);
     // print_orphans(decl);
   }
 
   void print_line(DeclInfo& decl, LineInfo& line) {
     if (!needed_names_defined(decl, line.needed_names)) {
       printf("print -- %s doesn't have %s\n", line.name.c_str(), stringify(line.needed_names).c_str());
-      decl.orphans.emplace_back(line);
+      // decl.orphans.emplace_back(line);
       return;
     }
     outputLine(kj::str(check_keyword(line.name), " = ", line.value));
@@ -404,17 +465,15 @@ class CapnpcPython : public BaseGenerator {
       print_line(decls_.back(), line);
       // print_orphans(decls_.back());
     } else {
-      decls_.back().lines.emplace_back(line);
+      // decls_.back().lines.emplace_back(line);
     }
   }
 
   bool post_visit_enumerant(Schema, EnumSchema::Enumerant enumerant) {
     auto line = kj::strTree(
-        "(", enumerant.getOrdinal(), ", \"", enumerant.getProto().getName(),
-        "\"", get_stored_annotations(/* include_key= */ false), ")");
-    enumerants_.emplace_back(EnumerantInfo {
-        kj::str(enumerant.getProto().getName()).cStr(), kj::str(enumerant.getOrdinal()).cStr(),
-        std::move(last_annotations_)});
+        MODULE "Enumerant(name=\"", enumerant.getProto().getName(),
+        "\", ordinal=", enumerant.getOrdinal(), get_stored_annotations(), ")");
+    enumerants_.emplace_back(EnumerantInfo {line.flatten().cStr(), needed_names_});
     return false;
   }
 
@@ -445,13 +504,9 @@ class CapnpcPython : public BaseGenerator {
   }
   //[[[end]]]
   
-  kj::StringTree get_stored_annotations(bool include_key=true) {
+  kj::StringTree get_stored_annotations(/*bool include_key=true*/) {
     if (stored_annotations_.size() > 0) {
-      if (include_key) {
         return kj::strTree(", annotations=", stored_annotations_);
-      } else {
-        return kj::strTree(", ", stored_annotations_);
-      }
     }
     return kj::strTree("");
   }
@@ -461,22 +516,22 @@ class CapnpcPython : public BaseGenerator {
     auto decl = kj::strTree("(id=", field.getIndex(), ", name=\"",
         field.getProto().getName(), "\", type=", last_type_,
         get_stored_annotations(), ")");
-    last_fields_.emplace_back(FieldInfo {kj::mv(name), decl.flatten(), kj::mv(needed_names_)});
+    fields_.emplace_back(FieldInfo {kj::mv(name), decl.flatten(), kj::mv(needed_names_)});
     return false;
   }
 
-  bool post_visit_struct_fields(StructSchema) {
-    param_list_.resize(0);
-    for (auto& field : last_fields_) {
-      if (output_struct_fields_) {
-        define_name(field.name, kj::str(MODULE "Field", field.params), field.needed_names);
-      } else {
-        param_list_.add(kj::str(MODULE "Param", field.params));
-      }
-    }
-    last_fields_.clear();
-    return false;
-  }
+  // bool post_visit_struct_fields(StructSchema) {
+  //   param_list_.resize(0);
+  //   for (auto& field : last_fields_) {
+  //     if (output_struct_fields_) {
+  //       define_name(field.name, kj::str(MODULE "Field", field.params), field.needed_names);
+  //     } else {
+  //       param_list_.add(kj::str(MODULE "Param", field.params));
+  //     }
+  //   }
+  //   fields_.clear();
+  //   return false;
+  // }
 
   bool traverse_method(Schema schema, InterfaceSchema::Method method) override {
     auto methodProto = method.getProto();
@@ -484,27 +539,54 @@ class CapnpcPython : public BaseGenerator {
     auto proto = method.getProto();
     auto line = kj::strTree(
         MODULE "Method(id=", method.getIndex(),
-        ", name=\"", proto.getName(), "\", params=[");
+        ", name=\"", proto.getName(), "\"");
     // Params
-    output_struct_fields_ = false;
+    // output_struct_fields_ = false;
     TRAVERSE(param_list, interface, kj::str("parameters"), method.getParamType());
-    line = kj::strTree(
-        kj::mv(line), kj::strArray(param_list_, ", "), "], results=[");
+    std::vector<kj::String> fields;
+    for (auto &field : fields_) {
+      if (needed_names_defined(decls_.back(), field.needed_names)) {
+        fields.emplace_back(kj::str(field.params));
+      } else {
+        // TODO: add to orphans
+      }
+    }
+    line = kj::strTree(kj::mv(line), ", input_params=[", kj::strArray(fields, ", "), "]");
 
     // Results
+    fields_.clear();
+    fields.clear();
     TRAVERSE(param_list, interface, kj::str("results"), method.getResultType());
-    line = kj::strTree(kj::mv(line), kj::strArray(param_list_, ", "), "]");
-    output_struct_fields_ = true;
+    for (auto &field : fields_) {
+      if (needed_names_defined(decls_.back(), field.needed_names)) {
+        fields.emplace_back(kj::str(field.params));
+      } else {
+        // TODO: add to orphans
+      }
+    }
+    line = kj::strTree(kj::mv(line), ", output_params=[", kj::strArray(fields, ", "), "]");
+    //line = kj::strTree(kj::mv(line), kj::strArray(param_list_, ", "), "]");
+    //output_struct_fields_ = true;
 
     // Annotations
     TRAVERSE(annotations, schema, methodProto.getAnnotations());
     line = kj::strTree(kj::mv(line), get_stored_annotations(), ")");
-    define_name(kj::str(proto.getName()), line.flatten());
+    // TODO: fix needed names to put params and annotations on only if they're already valid.
+    methods_.emplace_back(MethodInfo {line.flatten().cStr(), needed_names_});
+    // define_name(kj::str(proto.getName()), line.flatten());
     return false;
   }
 
-  bool post_visit_file(Schema, schema::CodeGeneratorRequest::RequestedFile::Reader) override {
-    fclose(fd_);
+  bool post_visit_annotation(schema::Annotation::Reader, Schema schema) {
+    needed_names_.emplace(schema.getShortDisplayName().cStr());
+    annotations_.add(
+        kj::str(check_keyword(schema.getShortDisplayName()), "(", last_value_, ")"));
+    return false;
+  }
+
+  bool post_visit_annotations(Schema) {
+    stored_annotations_ = kj::str("[", kj::strArray(annotations_, ", "), "]");
+    annotations_.resize(0);
     return false;
   }
 
@@ -821,19 +903,6 @@ class CapnpcPython : public BaseGenerator {
         break;
       }
     }
-  }
-
-  bool post_visit_annotation(schema::Annotation::Reader, Schema schema) {
-    needed_names_.emplace(schema.getShortDisplayName().cStr());
-    last_annotations_.add(
-        kj::str(schema.getShortDisplayName(), "(", last_value_, ")"));
-    return false;
-  }
-
-  bool post_visit_annotations(Schema) {
-    stored_annotations_ = kj::str("[", kj::strArray(last_annotations_, ", "), "]");
-    last_annotations_.resize(0);
-    return false;
   }
 
 };
