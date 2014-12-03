@@ -428,15 +428,7 @@ class CapnpcCara : public BaseGenerator {
     return true;
   }
 
-  bool pre_visit_value(Schema schema, schema::Type::Reader type, schema::Value::Reader value) {
-    visit_value_w_type(schema, schemaLoader.getType(type, schema), value);
-    return true;
-  }
-
-  void visit_value_dynamic(Schema schema, Type type, DynamicValue::Reader value) {
-    // Sadly, this almost-exact-copy of visit_value_w_type is needed to deal
-    // with the fact that you can't get a 'concrete' schema::Value out of a
-    // List or its ilk.
+  bool pre_visit_dynamic_value(Schema schema, Type type, DynamicValue::Reader value) {
     switch (type.which()) {
       /*[[[cog
       sizes32 = [8, 16, 32]
@@ -505,11 +497,11 @@ class CapnpcCara : public BaseGenerator {
         auto listType = type.asList();
         auto listValue = value.as<DynamicList>();
         for (auto element : listValue) {
-          visit_value_dynamic(schema, listType.getElementType(), element);
+          TRAVERSE(dynamic_value, schema, listType.getElementType(), element);
           values.add(pop_back(last_value_));
         }
         last_value_.push(kj::str("[", kj::strArray(values, ", "), "]"));
-        break;
+        return true;
       }
       case schema::Type::ENUM: {
         auto enumValue = value.as<DynamicEnum>();
@@ -527,12 +519,12 @@ class CapnpcCara : public BaseGenerator {
         for (auto field : type.asStruct().getFields()) {
           if (structValue.has(field)) {
             auto fieldValue = structValue.get(field);
-            visit_value_dynamic(schema, field.getType(), fieldValue);
+            TRAVERSE(dynamic_value, schema, field.getType(), fieldValue);
             items.add(kj::str("\"", field.getProto().getName(), "\": ", pop_back(last_value_)));
           }
         }
         last_value_.push(kj::str("{", kj::strArray(items, ", "), "}"));
-        break;
+        return true;
       }
       case schema::Type::INTERFACE: {
         last_value_.push(kj::str(
@@ -545,114 +537,7 @@ class CapnpcCara : public BaseGenerator {
             "any pointer? how do you serialize an anypointer in a capnp file"));
         break;
     }
-  }
-
-  void visit_value_w_type(Schema schema, Type type, schema::Value::Reader value) {
-    switch (type.which()) {
-      /*[[[cog
-      sizes32 = [8, 16, 32]
-      sizes64 = [64]
-      types = {'bool': 'bool',
-               'int64': 'int64', 'uint64': 'uint64',
-               'float32': 'double', 'float64': 'double'}
-      types.update({'int%d' % size: 'int' for size in sizes32})
-      types.update({'uint%d' % size: 'uint' for size in sizes32})
-      for type, writer in sorted(types.items()):
-        cog.outl('case schema::Type::%s:' % type.upper())
-        cog.outl('  last_value_.push(kj::str(value.get%s()));' % type.title())
-        cog.outl('  break;')
-      ]]]*/
-      case schema::Type::BOOL:
-        last_value_.push(kj::str(value.getBool()));
-        break;
-      case schema::Type::FLOAT32:
-        last_value_.push(kj::str(value.getFloat32()));
-        break;
-      case schema::Type::FLOAT64:
-        last_value_.push(kj::str(value.getFloat64()));
-        break;
-      case schema::Type::INT16:
-        last_value_.push(kj::str(value.getInt16()));
-        break;
-      case schema::Type::INT32:
-        last_value_.push(kj::str(value.getInt32()));
-        break;
-      case schema::Type::INT64:
-        last_value_.push(kj::str(value.getInt64()));
-        break;
-      case schema::Type::INT8:
-        last_value_.push(kj::str(value.getInt8()));
-        break;
-      case schema::Type::UINT16:
-        last_value_.push(kj::str(value.getUint16()));
-        break;
-      case schema::Type::UINT32:
-        last_value_.push(kj::str(value.getUint32()));
-        break;
-      case schema::Type::UINT64:
-        last_value_.push(kj::str(value.getUint64()));
-        break;
-      case schema::Type::UINT8:
-        last_value_.push(kj::str(value.getUint8()));
-        break;
-      //[[[end]]]
-      case schema::Type::VOID:
-        last_value_.push(kj::str("void"));
-        break;
-      case schema::Type::TEXT:
-        last_value_.push(kj::str("'", value.getText(), "'"));
-        break;
-      case schema::Type::DATA:
-        last_value_.push(kj::str("b'", value.getData(), "'"));
-        break;
-      case schema::Type::LIST: {
-        kj::Vector<kj::String> values;
-        auto listType = type.asList();
-        auto listValue = value.getList().getAs<DynamicList>(listType);
-        for (auto element : listValue) {
-          visit_value_dynamic(schema, listType.getElementType(), element);
-          values.add(pop_back(last_value_));
-        }
-        last_value_.push(kj::str("[", kj::strArray(values, ", "), "]"));
-        break;
-      }
-      case schema::Type::ENUM: {
-        auto enumerants = type.asEnum().getEnumerants();
-        last_value_.push(kj::str(type.asEnum().getShortDisplayName()));
-        for (auto enumerant : enumerants) {
-          if (enumerant.getIndex() == value.getEnum()) {
-            last_value_.push(kj::str(
-                pop_back(last_value_), ".", enumerant.getProto().getName()));
-            break;
-          }
-        }
-        break;
-      }
-      case schema::Type::STRUCT: {
-        auto structValue = value.getStruct().getAs<DynamicStruct>(type.asStruct());
-        kj::Vector<kj::String> items;
-        for (auto field : type.asStruct().getFields()) {
-          if (structValue.has(field)) {
-            auto fieldValue = structValue.get(field);
-            visit_value_dynamic(schema, field.getType(), fieldValue);
-            items.add(kj::str("\"", field.getProto().getName(), "\": ", pop_back(last_value_)));
-          }
-        }
-        last_value_.push(kj::str("{", kj::strArray(items, ", "), "}"));
-        break;
-      }
-      case schema::Type::INTERFACE: {
-        last_value_.push(kj::str(
-            "interface? but that's not possible... how do you serialize an "
-            "interface in a capnp file?"));
-        break;
-      }
-      case schema::Type::ANY_POINTER: {
-        last_value_.push(kj::str(
-            "any pointer? how do you serialize an anypointer in a capnp file"));
-        break;
-      }
-    }
+    return false;
   }
 
 };
