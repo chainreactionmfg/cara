@@ -23,7 +23,7 @@ kj::String pop_back(string_stack& vect) {
 }
 
 template <typename T>
-kj::String to_py_array(T& arr) {
+kj::String to_py_array(T&& arr) {
   return kj::str("[", kj::strArray(arr, ", "), "]");
 }
 
@@ -130,9 +130,24 @@ class CapnpcCara : public BaseGenerator {
   kj::Vector<kj::String> annotations_;
   kj::String stored_annotations_ = kj::str("");
 
-  std::vector<kj::String> fields_;
-  std::vector<kj::String> enumerants_;
-  std::vector<kj::String> methods_;
+  struct StringWithId {
+    uint id;
+    kj::String data;
+    friend bool operator<(const StringWithId& a, const StringWithId& b) {
+      return a.id < b.id;
+    }
+  };
+  std::vector<kj::String> to_sorted_vector(std::vector<StringWithId>& vec) {
+    std::sort(vec.begin(), vec.end());
+    std::vector<kj::String> result;
+    for ( auto& obj : vec) {
+      result.emplace_back(kj::str(obj.data));
+    }
+    return result;
+  }
+  std::vector<StringWithId> fields_;
+  std::vector<StringWithId> enumerants_;
+  std::vector<StringWithId> methods_;
 
   bool pre_visit_file(Schema schema, RequestedFile requestedFile) override {
     kj::String outputFilename;
@@ -269,7 +284,8 @@ class CapnpcCara : public BaseGenerator {
 
   bool post_visit_enum_decl(Schema, NestedNode) {
     finish_decl(
-        "enumerants=", to_py_array(enumerants_), get_stored_annotations());
+        "enumerants=", to_py_array(to_sorted_vector(enumerants_)),
+        get_stored_annotations());
     return false;
   }
 
@@ -284,8 +300,8 @@ class CapnpcCara : public BaseGenerator {
     for (auto super : schema.asInterface().getSuperclasses()) {
       supers.add(kj::str(display_name(super)));
     }
-    finish_decl("superclasses=[", kj::strArray(supers, ", "), "], methods=[",
-        kj::strArray(methods_, ", "), "]", get_stored_annotations());
+    finish_decl("superclasses=[", kj::strArray(supers, ", "), "], methods=",
+        to_py_array(to_sorted_vector(methods_)), get_stored_annotations());
     return false;
   }
 
@@ -296,10 +312,10 @@ class CapnpcCara : public BaseGenerator {
   }
 
   bool post_visit_enumerant(Schema, EnumSchema::Enumerant enumerant) {
-    enumerants_.emplace_back(kj::str(
+    enumerants_.emplace_back(StringWithId {enumerant.getOrdinal(), kj::str(
         MODULE "Enumerant(name=\"", enumerant.getProto().getName(),
         "\", ordinal=", enumerant.getOrdinal(), get_stored_annotations(),
-        ")"));
+        ")")});
     return false;
   }
 
@@ -312,16 +328,18 @@ class CapnpcCara : public BaseGenerator {
   }
 
   bool post_visit_struct_field(StructSchema, StructSchema::Field field) {
-    fields_.emplace_back(kj::str("(id=", field.getIndex(), ", name=\"",
+    fields_.emplace_back(StringWithId {field.getIndex(), kj::str("(id=", field.getIndex(), ", name=\"",
         field.getProto().getName(), "\", type=", pop_back(last_type_),
-        get_stored_annotations(), ")"));
+        get_stored_annotations(), ")")});
     return false;
   }
 
   kj::String get_fields(std::string&& name) {
     std::vector<kj::String> fields;
+    using field_type = decltype(*fields_.begin());
+    std::sort(fields_.begin(), fields_.end());
     for (auto &field : fields_) {
-      fields.emplace_back(kj::str(MODULE, name, field));
+      fields.emplace_back(kj::str(MODULE, name, field.data));
     }
     fields_.clear();
     return to_py_array(fields);
@@ -347,7 +365,7 @@ class CapnpcCara : public BaseGenerator {
     // Annotations
     TRAVERSE(annotations, schema, methodProto.getAnnotations());
     line = kj::strTree(kj::mv(line), get_stored_annotations(), ")");
-    methods_.emplace_back(line.flatten());
+    methods_.emplace_back(StringWithId {method.getIndex(), line.flatten()});
     return false;
   }
 
