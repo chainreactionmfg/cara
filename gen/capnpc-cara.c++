@@ -31,6 +31,17 @@ kj::String pop_back(string_stack& vect) {
   return result;
 }
 
+template <typename T>
+kj::String to_py_array(T& arr) {
+  return kj::str("[", kj::strArray(arr, ", "), "]");
+}
+
+template <typename T>
+kj::StringPtr display_name(T&& schema) {
+  auto name = schema.getProto().getDisplayName();
+  return name.slice(name.findFirst(':').orDefault(-1) + 1);
+}
+
 /*[[[cog
 keyword_list = ', '.join('"%s"' % kw for kw in python_keywords)
 cog.outl('const hash_set<std::string> KEYWORDS = {%s};' % keyword_list)
@@ -245,7 +256,7 @@ class CapnpcCara : public BaseGenerator {
       line = kj::strTree(kj::mv(line), MODULE "Annotation.ALL");
     } else {
       // Otherwise, output each target.
-      line = kj::strTree(kj::mv(line), "[", kj::strArray(targets, ", "), "]");
+      line = kj::strTree(kj::mv(line), to_py_array(targets));
     }
     line = kj::strTree(kj::mv(line), get_stored_annotations());
     finish_decl(line);
@@ -253,20 +264,24 @@ class CapnpcCara : public BaseGenerator {
   }
 
   bool post_visit_enum_decl(Schema, schema::Node::NestedNode::Reader) {
-    finish_decl("enumerants=[", kj::strArray(enumerants_, ", "), "]",
-          get_stored_annotations());
+    finish_decl(
+        "enumerants=", to_py_array(enumerants_), get_stored_annotations());
     return false;
   }
 
   bool post_visit_struct_decl(Schema, schema::Node::NestedNode::Reader) {
     finish_decl(
-        "fields=[", get_fields("Field"), "]", get_stored_annotations());
+        "fields=", get_fields("Field"), get_stored_annotations());
     return false;
   }
 
-  bool post_visit_interface_decl(Schema, schema::Node::NestedNode::Reader) {
-    finish_decl("methods=[", kj::strArray(methods_, ", "), "]",
-          get_stored_annotations());
+  bool post_visit_interface_decl(Schema schema, schema::Node::NestedNode::Reader) {
+    kj::Vector<kj::String> supers;
+    for (auto super : schema.asInterface().getSuperclasses()) {
+      supers.add(kj::str(display_name(super)));
+    }
+    finish_decl("superclasses=[", kj::strArray(supers, ", "), "], methods=[",
+        kj::strArray(methods_, ", "), "]", get_stored_annotations());
     return false;
   }
 
@@ -305,7 +320,7 @@ class CapnpcCara : public BaseGenerator {
       fields.emplace_back(kj::str(MODULE, name, field));
     }
     fields_.clear();
-    return kj::strArray(fields, ", ");
+    return to_py_array(fields);
   }
 
   bool traverse_method(Schema schema, InterfaceSchema::Method method) override {
@@ -318,12 +333,12 @@ class CapnpcCara : public BaseGenerator {
     // Params
     TRAVERSE(param_list, interface, kj::str("parameters"), method.getParamType());
     line = kj::strTree(
-        kj::mv(line), ", input_params=[", get_fields("Param"), "]");
+        kj::mv(line), ", input_params=", get_fields("Param"));
 
     // Results
     TRAVERSE(param_list, interface, kj::str("results"), method.getResultType());
     line = kj::strTree(
-        kj::mv(line), ", output_params=[", get_fields("Param"), "]");
+        kj::mv(line), ", output_params=", get_fields("Param"));
 
     // Annotations
     TRAVERSE(annotations, schema, methodProto.getAnnotations());
@@ -333,13 +348,13 @@ class CapnpcCara : public BaseGenerator {
   }
 
   bool post_visit_annotation(schema::Annotation::Reader, Schema schema) {
-    annotations_.add(kj::str(check_keyword(schema.getShortDisplayName()), "(",
+    annotations_.add(kj::str(check_keyword(display_name(schema)), "(",
           pop_back(last_value_), ")"));
     return false;
   }
 
   bool post_visit_annotations(Schema) {
-    stored_annotations_ = kj::str("[", kj::strArray(annotations_, ", "), "]");
+    stored_annotations_ = to_py_array(annotations_);
     annotations_.resize(0);
     return false;
   }
@@ -406,19 +421,19 @@ class CapnpcCara : public BaseGenerator {
         auto enumSchema = schemaLoader.get(
             type.getEnum().getTypeId(), type.getEnum().getBrand(), schema);
         // TODO: Deal with generics here and the below types.
-        last_type_.push(kj::str(enumSchema.getShortDisplayName()));
+        last_type_.push(kj::str(display_name(enumSchema)));
         break;
       }
       case schema::Type::INTERFACE: {
         auto ifaceSchema = schemaLoader.get(
             type.getInterface().getTypeId(), type.getInterface().getBrand(), schema);
-        last_type_.push(kj::str(ifaceSchema.getShortDisplayName()));
+        last_type_.push(kj::str(display_name(ifaceSchema)));
         break;
       }
       case schema::Type::STRUCT: {
         auto structSchema = schemaLoader.get(
             type.getStruct().getTypeId(), type.getStruct().getBrand(), schema);
-        last_type_.push(kj::str(structSchema.getShortDisplayName()));
+        last_type_.push(kj::str(display_name(structSchema)));
         break;
       }
       case schema::Type::ANY_POINTER:
@@ -500,12 +515,12 @@ class CapnpcCara : public BaseGenerator {
           TRAVERSE(dynamic_value, schema, listType.getElementType(), element);
           values.add(pop_back(last_value_));
         }
-        last_value_.push(kj::str("[", kj::strArray(values, ", "), "]"));
+        last_value_.push(to_py_array(values));
         return true;
       }
       case schema::Type::ENUM: {
         auto enumValue = value.as<DynamicEnum>();
-        last_value_.push(kj::str(enumValue.getSchema().getShortDisplayName()));
+        last_value_.push(kj::str(display_name(enumValue.getSchema())));
         KJ_IF_MAYBE(enumerant, enumValue.getEnumerant()) {
           last_value_.push(kj::str(
               pop_back(last_value_), ".",
