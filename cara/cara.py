@@ -76,43 +76,25 @@ class Annotation(BaseDeclaration):
       return AnnotationValue(self, val)
 
 
-# Enums!
-# class Enum(enum.Enum):
-#     def __init__(self, id, name, annotation=None):
-#         self.schema_name = name
-#         self.annotation = annotation or ()
-# class Enum(BaseDeclaration):
-#   optional_attributes = {'enumerants': list, 'enum': None}
-#
-#   def Finished(self):
-#     members = enum._EnumDict()
-#     for e in self.enumerants:
-#         members[e.name] = e
-#     self.enum = enum.EnumMeta(self.name, (enum.Enum,), members)
-
-
-# Consts!
 class Const(BaseDeclaration):
   optional_attributes = {'type': None, 'value': None}
+
+
+def Enum(name, enumerants=None):
+  return BaseEnum(name, {en.name: en for en in enumerants or []})
 
 
 class BaseEnum(enum.Enum):
     @classmethod
     def FinishDeclaration(cls, enumerants=None, annotations=None):
         cls.__annotations__ = annotations or []
-        for enumerant in enumerants or []:
-            cls._member_names_.append(check_keyword(enumerant.name))
-            cls._member_map_[check_keyword(enumerant.name)] = enumerant
-            try:
-                cls._value2member_map_[enumerant] = enumerant.name
-            except TypeError:
-                pass
-            cls._member_type_ = object
-
-
-def Enum(name):
-  members = enum._EnumDict()
-  return enum.EnumMeta(name, (BaseEnum,), members)
+        # Copy the new enumerant annotations to the proper enumerant.
+        enumerants = {en.name: en.annotations for en in enumerants or []}
+        for cls_enumerant in cls:
+            new_annotations = enumerants[cls_enumerant.name]
+            if not new_annotations:
+                continue
+            cls_enumerant.annotations = new_annotations
 
 
 def Struct(name):
