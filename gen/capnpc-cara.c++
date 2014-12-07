@@ -286,6 +286,7 @@ class CapnpcCara : public BaseGenerator {
     finish_decl(
         "enumerants=", to_py_array(to_sorted_vector(enumerants_)),
         get_stored_annotations());
+    enumerants_.clear();
     return false;
   }
 
@@ -302,6 +303,7 @@ class CapnpcCara : public BaseGenerator {
     }
     finish_decl("superclasses=[", kj::strArray(supers, ", "), "], methods=",
         to_py_array(to_sorted_vector(methods_)), get_stored_annotations());
+    methods_.clear();
     return false;
   }
 
@@ -437,7 +439,7 @@ class CapnpcCara : public BaseGenerator {
       //[[[end]]]
       case schema::Type::LIST:
         TRAVERSE(type, schema, type.getList().getElementType());
-        last_type_.push(kj::str("List(", pop_back(last_type_), ")"));
+        last_type_.push(kj::str(MODULE "List(", pop_back(last_type_), ")"));
         break;
       case schema::Type::ENUM: {
         auto enumSchema = schemaLoader.get(
@@ -523,7 +525,7 @@ class CapnpcCara : public BaseGenerator {
         break;
       //[[[end]]]
       case schema::Type::VOID:
-        last_value_.push(kj::str("value"));
+        last_value_.push(kj::str(""));
         break;
       case schema::Type::TEXT:
         last_value_.push(kj::str("'", value.as<Text>(), "'"));
