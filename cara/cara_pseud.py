@@ -1,6 +1,6 @@
 import inspect
 
-import cara
+from cara import cara
 from crmfg_utils import records
 
 import msgpack
@@ -119,8 +119,8 @@ def register_interface(server, interface=None, obj_or_cls=None):
             obj = interface(obj_or_cls)
         else:
             # Should be an instance of a class.
-            obj = obj_or_cls
             interface = _find_interface(obj_or_cls.__class__, interface)
+            obj = interface(obj_or_cls)
 
         for name, method in interface.__methods__.items():
             func = getattr(obj, name)

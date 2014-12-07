@@ -1,5 +1,5 @@
-import cara
-import cara_pseud
+from cara import cara
+from cara import cara_pseud
 import tornado
 import tornado.testing
 import pseud
