@@ -54,6 +54,34 @@ for name, checker in BUILTIN_TYPES.items():
     setattr(mod, name, type(name, (BuiltinType,), {'checker': checker}))
 
 
+def _ConvertToType(type, value):
+  """Convert a value to a field (or param's) type.
+
+  Args:
+      type: type to convert to.
+      value: value to convert. Can be a Future, in which case we'll chain the
+            future into one that returns the converted type.
+
+  Returns:
+      Returns either the converted value or a future that will return the
+      converted value.
+  """
+  # XXX: tight-coupling point with pseud (futures)
+  if not isinstance(value, (
+      tornado.concurrent.Future, concurrent.futures.Future)):
+    return type(value)
+
+  new_future = tornado.concurrent.Future()
+
+  def _Done(fut):
+      new_future.set_result(_ConvertToType(type, fut.result()))
+
+  value.add_done_callback(_Done)
+  # For exceptions only:
+  tornado.concurrent.chain_future(value, new_future)
+  return new_future
+
+
 class BaseDeclaration(records.Record(
         'BaseDeclaration', ['name'], {'annotations': list})):
 
@@ -73,11 +101,14 @@ class Annotation(BaseDeclaration):
   optional_attributes = {'type': None, 'applies_to': ALL}
 
   def __call__(self, val=None):
-      return AnnotationValue(self, val)
+      return AnnotationValue(self, _ConvertToType(self, val))
 
 
 class Const(BaseDeclaration):
   optional_attributes = {'type': None, 'value': None}
+
+  def Finished(self):
+      self.value = _ConvertToType(self, self.value)
 
 
 def Enum(name, enumerants=None):
@@ -129,14 +160,14 @@ class BaseStruct(dict, metaclass=StructMeta):
       if not isinstance(k, int):
         # val's keys are strings, so we're being created, switch to ints
         field = self._get_field_from_name(k)
-        keep[field.id] = field.type(v)
+        keep[field.id] = _ConvertToType(field.type, v)
       else:
-        keep[k] = self._get_field_from_id(k).type(v)
+        keep[k] = _ConvertToType(self._get_field_from_id(k).type, v)
     super().__init__(keep)
 
   def __setattr__(self, attr, val):
     if attr in type(self).__fields__:
-      self[attr] = self._get_field_from_name(attr).type(val)
+      self[attr] = _ConvertToType(self._get_field_from_name(attr).type, val)
     elif attr in type(self).__slots__:
       super().__setattr__(attr, val)
 
@@ -286,28 +317,18 @@ class BaseInterface(metaclass=InterfaceMeta):
   @staticmethod
   def _MethodWrapper(func, method):
     def _Wrapper(*args, **kwargs):
-      def _Convert(param, val):
-          # XXX: tight-coupling point with pseud (futures)
-          if isinstance(val, (tornado.concurrent.Future, concurrent.futures.Future)):
-              new_future = tornado.concurrent.Future()
-              def _Done(fut):
-                  new_future.set_result(_Convert(param, fut.result()))
-              val.add_done_callback(_Done)
-              # For exceptions only:
-              tornado.concurrent.chain_future(val, new_future)
-              return new_future
-          return param.type(val)
       def _GetParam(name, params):
-          for param in params:
-              if param.name == name:
-                  return param
-          raise TypeError('Param %s does not exist for method %s' % (
-              name, method.name))
+          param = next((param for param in params if param.name == name), None)
+          if param is None:
+            raise TypeError('Param %s does not exist for method %s' % (
+                name, method.name))
+          return param
       # Convert input params to proper types first.
-      args = (_Convert(param, arg)
+      args = (_ConvertToType(param.type, arg)
               for param, arg in zip(method.input_params, args))
-      kwargs = {name: _Convert(_GetParam(name, method.input_params), arg)
-                for name, arg in kwargs.items()}
+      kwargs = {
+          name: _ConvertToType(_GetParam(name, method.input_params).type, arg)
+          for name, arg in kwargs.items()}
       result = func(*args, **kwargs)
 
       # Convert result to proper types now.
@@ -320,14 +341,14 @@ class BaseInterface(metaclass=InterfaceMeta):
           # Dict with only the one output param was returned, so unbox it.
           result = result[param.name]
         # Return the result unboxed since it's only one parameter.
-        return _Convert(param, result)
+        return _ConvertToType(param.type, result)
 
       if ((isinstance(result, (tuple, list))
            and len(method.output_params) == len(result))
           or inspect.isgenerator(result)):
         # Convert results according to param id. Not the wisest choice, but
         # still valid. Also, generated param lists are sorted.
-        return {param.name: _Convert(param, res)
+        return {param.name: _ConvertToType(param.type, res)
                 for param, res in zip(method.output_params, result)}
 
       if (not isinstance(result, dict)
@@ -338,7 +359,7 @@ class BaseInterface(metaclass=InterfaceMeta):
                             method.name, result, len(method.output_params)))
 
       # The result is solely a dict, so convert them.
-      return {param.name: _Convert(param, result[param.name])
+      return {param.name: _ConvertToType(param.type, result[param.name])
               for param in method.output_params}
     return _Wrapper
 
