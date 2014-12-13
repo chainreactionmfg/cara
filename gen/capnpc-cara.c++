@@ -540,13 +540,17 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
     for (std::string tmp; std::getline(pathStream, tmp, '/');) {
       importPath.emplace_back(clean_filename(kj::str(tmp)).cStr());
     }
-    auto name = importPath.back();
+    auto name = std::string(importPath.back());
     importPath.pop_back();
 
-    fprintf(
-        fd_, "from %s import %s\n",
-        kj::strArray(importPath, ".").cStr(),
-        name.c_str());
+    if (importPath.size() == 0) {
+      fprintf(fd_, "import %s\n", name.c_str());
+    } else {
+      fprintf(
+          fd_, "from %s import %s\n",
+          kj::strArray(importPath, ".").cStr(),
+          name.c_str());
+    }
     return false;
   }
 
@@ -625,8 +629,7 @@ class CapnpcCara : public BasePythonGenerator {
   }
 
   void outputLine(kj::StringPtr line) {
-    fwrite(line.cStr(), line.size(), 1, fd_);
-    fputc('\n', fd_);
+    fprintf(fd_, "%s\n", line.cStr());
   }
 
   bool pre_visit_decl(Schema, NestedNode decl) {
