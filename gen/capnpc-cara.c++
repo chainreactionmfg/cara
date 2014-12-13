@@ -83,7 +83,7 @@ kj::String check_keyword(T&& input) {
     if ch == '+':
       char_map.append('x')
     # Map [^\w_] to _
-    elif ch not in string.ascii_letters + string.digits + '.':
+    elif ch not in string.ascii_letters + string.digits + './':
       char_map.append('_')
     else:
       char_map.append(ch)
@@ -99,7 +99,7 @@ kj::String check_keyword(T&& input) {
     '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
     '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
     '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', 'x', '_',
-    '_', '.', '_', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '_',
+    '_', '.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '_',
     '_', '_', '_', '_', '_', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
     'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
     'Z', '_', '_', '_', '_', '_', '_', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
@@ -606,7 +606,7 @@ class CapnpcCara : public BasePythonGenerator {
   std::vector<std::string> decl_stack_;
 
   bool pre_visit_file(Schema schema, RequestedFile requestedFile) override {
-    auto inputFilename = requestedFile.getFilename();
+    auto inputFilename = schema.getProto().getDisplayName();
     kj::String outputFilename = kj::str(clean_filename(inputFilename), FILE_SUFFIX);
     fd_ = fopen(outputFilename.cStr(), "w");
 
