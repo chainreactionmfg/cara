@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <regex>
 #include <set>
 #include <stack>
 #include <unordered_set>
@@ -13,6 +14,9 @@
 // 'typedef' some long types.
 using NestedNode = schema::Node::NestedNode::Reader;
 using RequestedFile = schema::CodeGeneratorRequest::RequestedFile::Reader;
+
+const char FILE_SUFFIX[] = ".py";
+const std::regex PYTHON_NAME_INVALID_CHARS_RE {R"([^A-Za-z_]|[^\w])"};
 
 
 typedef std::stack<kj::String, std::vector<kj::String>> string_stack;
@@ -44,20 +48,14 @@ std::vector<kj::String> to_sorted_vector(std::vector<StringWithId>& vec) {
   return result;
 }
 
-template <typename T>
-kj::StringPtr display_name(T&& schema) {
-  auto name = schema.getProto().getDisplayName();
-  return name.slice(name.findFirst(':').orDefault(-1) + 1);
-}
-
 template <typename T> using hash_set = std::unordered_set<T>;
 
 /*[[[cog
 import textwrap
-keyword_list = ', '.join('"%s"' % kw for kw in python_keywords)
-cog.outl('const hash_set<std::string> KEYWORDS = {')
 wrapper = textwrap.TextWrapper(
     width=80, initial_indent='  ', subsequent_indent='  ')
+keyword_list = ', '.join('"%s"' % kw for kw in python_keywords)
+cog.outl('const hash_set<std::string> KEYWORDS = {')
 for line in wrapper.wrap('%s' % keyword_list):
   cog.outl(line)
 cog.outl('};')
@@ -71,9 +69,85 @@ const hash_set<std::string> KEYWORDS = {
 //[[[end]]]
 template<typename T>
 kj::String check_keyword(T&& input) {
-  if (KEYWORDS.count(kj::str(input).cStr()))
-    return kj::str(kj::mv(input), "_");
-  return kj::str(input);
+  kj::String output = kj::str(kj::mv(input));
+  // Append a _ for keywords.
+  if (KEYWORDS.count(output.cStr()))
+    output = kj::str(kj::mv(output), "_");
+
+  /*[[[cog
+  import string
+  char_map = []  # {'+': 'x'}
+  for i in range(256):
+    ch = chr(i)
+    # Map + to x
+    if ch == '+':
+      char_map.append('x')
+    # Map [^\w_] to _
+    elif ch not in string.ascii_letters + string.digits + '.':
+      char_map.append('_')
+    else:
+      char_map.append(ch)
+  cog.outl('static const char char_map[256] {')
+  line = ', '.join("'%s'" % ch for ch in char_map)
+  wrapper = textwrap.TextWrapper(
+      width=78, initial_indent='  ', subsequent_indent='  ')
+  for line in wrapper.wrap(line):
+    cog.outl(line)
+  cog.outl('};')
+  ]]]*/
+  static const char char_map[256] {
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', 'x', '_',
+    '_', '.', '_', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '_',
+    '_', '_', '_', '_', '_', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
+    'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
+    'Z', '_', '_', '_', '_', '_', '_', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+    'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w',
+    'x', 'y', 'z', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
+    '_'
+  };
+  ///[[[end]]]
+  // Replace invalid characters with _ or a known character.
+  std::string newFilenameStr = output.cStr();
+  std::sregex_iterator iter {
+    newFilenameStr.begin(), newFilenameStr.end(), 
+      PYTHON_NAME_INVALID_CHARS_RE};
+  std::sregex_iterator end;
+  bool prepend = false;
+  for (; iter != end; ++iter) {
+    // all results will be a single character
+    auto match = iter->str()[0];
+    auto pos = iter->position();
+    if (pos == 0) {
+      // If it's at the beginning, don't make it start with _.
+      prepend = true;
+    }
+    newFilenameStr[pos] = char_map[(int)match];
+  }
+  if (prepend) {
+    newFilenameStr.insert(newFilenameStr.begin(), 'V');
+  }
+  return kj::str(newFilenameStr);
+}
+
+template<typename T>
+kj::String clean_filename(T&& filename, bool last=true) {
+  kj::String newFilename = kj::str(filename);
+  // Cut off first/last period.
+  auto found = last ? filename.findLast('.') : filename.findFirst('.');
+  KJ_IF_MAYBE(loc, found) {
+    newFilename = kj::str(filename.slice(0, *loc));
+  }
+  return check_keyword(kj::mv(newFilename));
 }
 
 class BasePythonGenerator : public BaseGenerator {
@@ -92,6 +166,31 @@ class BasePythonGenerator : public BaseGenerator {
   kj::Vector<kj::String> annotations_;
   kj::String stored_annotations_ = kj::str("");
 
+  std::vector<unsigned long> importIds_;
+
+  kj::String display_name(Schema& schema) {
+    auto&& proto = schema.getProto();
+    kj::String name = kj::str(proto.getDisplayName());
+    name = kj::str(name.slice(name.findFirst(':').orDefault(-1) + 1));
+
+    auto is_import = [this] (auto id) {
+      return (
+          std::find(importIds_.begin(), importIds_.end(), id)
+          != importIds_.end());
+    };
+    auto scopeId = proto.getScopeId();
+    while (scopeId != 0) {
+      proto = schemaLoader.get(scopeId).getProto();
+      if (is_import(scopeId)) {
+        auto fn = kj::str(proto.getDisplayName());
+        fn = clean_filename(fn.slice(fn.findFirst('/').orDefault(-1) + 1));
+        name = kj::str(fn, ".", kj::mv(name));
+      }
+      scopeId = proto.getScopeId();
+    }
+    return name;
+  }
+
   kj::String get_fields(std::string&& name) {
     std::vector<kj::String> fields;
     using field_type = decltype(*fields_.begin());
@@ -109,6 +208,11 @@ class BasePythonGenerator : public BaseGenerator {
         return kj::strTree(", annotations=", stored);
     }
     return kj::strTree("");
+  }
+
+  bool pre_visit_import(Schema, Import::Reader import) override {
+    importIds_.emplace_back(import.getId());
+    return false;
   }
 
   bool post_visit_annotation(schema::Annotation::Reader, Schema schema) {
@@ -210,16 +314,26 @@ class BasePythonGenerator : public BaseGenerator {
 
   bool pre_visit_dynamic_value(
       Schema schema, Type type, DynamicValue::Reader value) {
+    auto convertFloat = [this] (auto floatVal) {
+      if (std::isinf(floatVal)) {
+        if (floatVal > 0) {
+          last_value_.push(kj::str(R"(float("inf"))"));
+        } else {
+          last_value_.push(kj::str(R"(float("-inf"))"));
+        }
+      } else if (std::isnan(floatVal)) {
+        last_value_.push(kj::str(R"(float("nan"))"));
+      } else {
+        last_value_.push(kj::str(floatVal));
+      }
+    };
     switch (type.which()) {
       /*[[[cog
       sizes32 = [8, 16, 32]
       sizes64 = [64]
       types = [
-          ('bool', 'bool', 'bool'),
           ('int64', 'int64_t', 'int64'),
           ('uint64', 'uint64_t', 'uint64'),
-          ('float32', 'float', 'double'),
-          ('float64', 'double', 'double')
       ] + [
           ('int%d' % size, 'int%d_t' % size, 'int') for size in sizes32
       ] + [
@@ -230,20 +344,11 @@ class BasePythonGenerator : public BaseGenerator {
         cog.outl('  last_value_.push(kj::str(value.as<%s>()));' % (ctype))
         cog.outl('  break;')
       ]]]*/
-      case schema::Type::BOOL:
-        last_value_.push(kj::str(value.as<bool>()));
-        break;
       case schema::Type::INT64:
         last_value_.push(kj::str(value.as<int64_t>()));
         break;
       case schema::Type::UINT64:
         last_value_.push(kj::str(value.as<uint64_t>()));
-        break;
-      case schema::Type::FLOAT32:
-        last_value_.push(kj::str(value.as<float>()));
-        break;
-      case schema::Type::FLOAT64:
-        last_value_.push(kj::str(value.as<double>()));
         break;
       case schema::Type::INT8:
         last_value_.push(kj::str(value.as<int8_t>()));
@@ -265,7 +370,16 @@ class BasePythonGenerator : public BaseGenerator {
         break;
       //[[[end]]]
       case schema::Type::VOID:
-        last_value_.push(kj::str(""));
+        last_value_.push(kj::str(MODULE "Void()"));
+        break;
+      case schema::Type::BOOL:
+        last_value_.push(kj::str(value.as<bool>() ? "True" : "False"));
+        break;
+      case schema::Type::FLOAT32:
+        convertFloat(value.as<float>());
+        break;
+      case schema::Type::FLOAT64:
+        convertFloat(value.as<double>());
         break;
       case schema::Type::TEXT:
         last_value_.push(kj::str("'", value.as<Text>(), "'"));
@@ -286,7 +400,8 @@ class BasePythonGenerator : public BaseGenerator {
       }
       case schema::Type::ENUM: {
         auto enumValue = value.as<DynamicEnum>();
-        last_value_.push(kj::str(display_name(enumValue.getSchema())));
+        auto schema = enumValue.getSchema().getGeneric();
+        last_value_.push(kj::str(display_name(schema)));
         KJ_IF_MAYBE(enumerant, enumValue.getEnumerant()) {
           last_value_.push(kj::str(
               pop_back(last_value_), ".",
@@ -330,10 +445,10 @@ class BasePythonGenerator : public BaseGenerator {
     return false;
   }
 
-  bool post_visit_struct_field(StructSchema, StructSchema::Field field) {
-    fields_.emplace_back(StringWithId {field.getIndex(), kj::str("(id=", field.getIndex(), ", name=\"",
-        field.getProto().getName(), "\", type=", pop_back(last_type_),
-        get_stored_annotations(), ")")});
+  bool post_visit_struct_field_slot(StructSchema, StructSchema::Field field, schema::Field::Slot::Reader) {
+    fields_.emplace_back(StringWithId {field.getIndex(), kj::str("(id=",
+          field.getIndex(), ", name=\"", field.getProto().getName(),
+          "\", type=", pop_back(last_type_), get_stored_annotations(), ")")});
     return false;
   }
 
@@ -411,6 +526,30 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
         kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr());
   }
 
+  bool pre_visit_import(Schema, Import::Reader import) override {
+    auto path = import.getName();
+    bool root = path.startsWith("/");
+    if (root) path = path.slice(1);
+
+    std::vector<std::string> importPath;
+    if (root) {
+      importPath.emplace_back(MODULE_NAME);
+    }
+    std::string pathStr {import.getName().slice(root ? 1 : 0).cStr()};
+    std::stringstream pathStream {pathStr};
+    for (std::string tmp; std::getline(pathStream, tmp, '/');) {
+      importPath.emplace_back(clean_filename(kj::str(tmp)).cStr());
+    }
+    auto name = importPath.back();
+    importPath.pop_back();
+
+    fprintf(
+        fd_, "from %s import %s\n",
+        kj::strArray(importPath, ".").cStr(),
+        name.c_str());
+    return false;
+  }
+
   bool pre_visit_decl(Schema, NestedNode decl) {
     decl_stack_.emplace_back(check_keyword(decl.getName()).cStr());
     return false;
@@ -422,9 +561,9 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
   }
 
   bool pre_visit_enum_decl(Schema schema, NestedNode decl) {
+    // Output all the fields of the enum in the forward decl.
     EnumForwardDecl enumDecl {schemaLoader, fd_, decl_stack_};
     enumDecl.traverse_enum_decl(schema, decl);
-    // outputDecl("Enum", decl.getName());
     return false;
   }
   /*[[[cog
@@ -459,22 +598,16 @@ class CapnpcCara : public BasePythonGenerator {
   CapnpcCara(SchemaLoader& loader)
     : BasePythonGenerator(loader) {}
  private:
-  constexpr static const char FILE_SUFFIX[] = ".py";
   FILE* fd_;
   std::vector<std::string> decl_stack_;
 
   bool pre_visit_file(Schema schema, RequestedFile requestedFile) override {
-    kj::String outputFilename;
     auto inputFilename = requestedFile.getFilename();
-    KJ_IF_MAYBE(loc, inputFilename.findLast('.')) {
-      outputFilename = kj::str(inputFilename.slice(0, *loc), FILE_SUFFIX);
-    } else {
-      outputFilename = kj::str(inputFilename, FILE_SUFFIX);
-    }
+    kj::String outputFilename = kj::str(clean_filename(inputFilename), FILE_SUFFIX);
     fd_ = fopen(outputFilename.cStr(), "w");
 
     // Start the file
-    outputLine("import " MODULE_NAME);
+    outputLine("from " MODULE_NAME " import " MODULE_NAME);
     outputLine("");
     outputLine("# Forward declarations:");
 
@@ -621,15 +754,17 @@ class CapnpcCara : public BasePythonGenerator {
     return false;
   }
 
-
   template<typename... Args>
   void finish_decl(Args&&... args) {
-    outputLine(kj::str(kj::strArray(decl_stack_, "."),
-          ".FinishDeclaration(", std::forward<Args>(args)..., ")"));
+    kj::String start = kj::str(kj::strArray(decl_stack_, "."),
+          ".FinishDeclaration(");
+    kj::String end = kj::str(std::forward<Args>(args)..., ")");
+    if (end.size() + start.size() >= 80) {
+      start = kj::str(kj::mv(start), "\n    ");
+    }
+    outputLine(kj::str(start, end));
   }
 
 };
-
-constexpr const char CapnpcCara::FILE_SUFFIX[];
 
 KJ_MAIN(CapnpcGenericMain<CapnpcCara>);
