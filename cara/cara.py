@@ -281,13 +281,6 @@ class BaseInterface(metaclass=InterfaceMeta):
                       'with only a function.' % cls)
     return result
 
-  def __init__(self, wrapped=None):
-    if type(self) == BaseInterface:
-        # Only wrapping if we're not a subclass.
-        return
-    if self is wrapped or isinstance(wrapped, type(self)):
-      return
-
   def __getitem__(self, key):
     if isinstance(key, int):
       key = self.__id_methods__[key]
