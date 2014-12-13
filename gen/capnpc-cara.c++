@@ -624,6 +624,10 @@ class CapnpcCara : public BasePythonGenerator {
   }
 
   bool post_visit_file(Schema, RequestedFile) override {
+    if (stored_annotations_.size() != 0) {
+      outputLine("");
+      outputLine(kj::str("__annotations__ = ", kj::mv(stored_annotations_)));
+    }
     fclose(fd_);
     return false;
   }
