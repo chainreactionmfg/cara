@@ -300,9 +300,12 @@ class BaseInterface(metaclass=InterfaceMeta):
       obj = self
     if inspect.isfunction(obj):
       return self._MethodWrapper(obj, method)
-    # skip our getattribute when we're a direct subclass.
     if obj == self:
+        # skip our getattribute when we're a direct subclass.
         func = super().__getattribute__(key)
+    elif isinstance(obj, dict):
+        # Allow wrapping a dict with functions instead of a class instance.
+        func = obj[key]
     else:
         func = getattr(obj, key)
     return self._MethodWrapper(func, method)
