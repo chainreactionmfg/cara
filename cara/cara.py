@@ -46,12 +46,17 @@ BUILTIN_TYPES = {
     'Int8': int, 'Int16': int, 'Int32': int, 'Int64': int, 'Uint8': int,
     'Uint16': int, 'Uint32': int, 'Uint64': int, 'Float32': float,
     'Float64': float, 'Text': str, 'Data': bytes,
-    'Bool': bool, 'Void': lambda: None,
+    'Bool': bool, 'Void': lambda *_: None,
 }
 
 mod = sys.modules[__name__]
 for name, checker in BUILTIN_TYPES.items():
     setattr(mod, name, type(name, (BuiltinType,), {'checker': checker}))
+
+
+class AnyPointer(object):
+    def __init__(self):
+        raise ValueError('AnyPointer cannot be instantiated.')
 
 
 def _ConvertToType(type, value):
@@ -101,14 +106,14 @@ class Annotation(BaseDeclaration):
   optional_attributes = {'type': None, 'applies_to': ALL}
 
   def __call__(self, val=None):
-      return AnnotationValue(self, _ConvertToType(self, val))
+      return AnnotationValue(self, _ConvertToType(self.type, val))
 
 
 class Const(BaseDeclaration):
   optional_attributes = {'type': None, 'value': None}
 
   def Finished(self):
-      self.value = _ConvertToType(self, self.value)
+      self.value = _ConvertToType(self.type, self.value)
 
 
 def Enum(name, enumerants=None):
