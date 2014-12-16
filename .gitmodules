@@ -1,6 +1,3 @@
 [submodule "capnp_generic_gen"]
-	path = capnp_generic_gen
+	path = gen/capnp_generic_gen
 	url = https://github.com/chainreactionmfg/capnp_generic_gen
-[submodule "capnproto"]
-	path = capnproto
-	url = https://github.com/kentonv/capnproto.git
