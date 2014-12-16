@@ -1,4 +1,6 @@
+import glob
 import os
+import subprocess
 
 from distutils import ccompiler
 from distutils.command.build import build
@@ -17,7 +19,12 @@ long_description = ''.join(readme_lines[4:])
 
 
 class cara_build(build):
-    sub_commands = build.sub_commands + [('build_generator', lambda _: True)]
+    def run(self):
+        # Have to build the .capnp files into .py files before the packages are
+        # checked, otherwise these would be sub_commands.
+        self.run_command('build_generator')
+        self.run_command('build_capnp_files')
+        super().run()
 
 
 class build_generator(build):
@@ -34,18 +41,41 @@ class build_generator(build):
             compiler.add_library('ld')
             compiler.define_macro('USE_DEATH_HANDLER', '1')
             extra_args.extend('-g -rdynamic'.split())
+        # capnp has .c++ as the extension, so to fit that world, we use .c++ as
+        # well, but not that many people do so here we tell the compiler to
+        # trust us that it can handle .c++.
+        compiler.src_extensions = list(compiler.src_extensions) + ['.c++']
         objects = compiler.compile(
-            ['gen/capnpc-cara.cpp'], extra_postargs=extra_args)
+            ['gen/capnpc-cara.c++'], extra_postargs=extra_args)
         [compiler.add_link_object(obj) for obj in objects]
-        # Output the binary directly into the build_scripts folder
-        self.mkpath(os.path.join(self.build_scripts, 'bin'))
         compiler.link_executable(
             [], 'capnpc-cara', output_dir='gen',
             extra_postargs=extra_args)
 
+
+class build_capnp_files(build):
+    def execute(self, cmd):
+        return subprocess.check_output(cmd)
+
+    def run(self):
+        # Find c++.capnp and friends first.
+        capnp_dir = self.execute(
+            'pkg-config --variable=includedir capnp'.split()).strip()
+        for filename in glob.glob(capnp_dir + b'/capnp/*.capnp'):
+            output = os.path.basename(filename).replace(b'.capnp', b'.py')
+            output = output.replace(b'+', b'x').replace(b'-', b'_')
+            # Then run capnp compile -ocara filename --src-prefix=dirname
+            self.execute([
+                'capnp', 'compile', '-o', 'gen/capnpc-cara', filename,
+                '--src-prefix', os.path.dirname(filename)])
+            self.mkpath(os.path.join(self.build_lib, 'cara', 'capnp'))
+            self.move_file(
+                output.decode('ascii'),
+                os.path.join(self.build_lib, 'cara', 'capnp'))
+
 setup(
     name='cara',
-    packages=['cara'],
+    packages=['cara', 'cara.capnp'],
     description=description,
     long_description=long_description,
     version=VERSION,
@@ -56,6 +86,7 @@ setup(
     cmdclass={
         'build': cara_build,
         'build_generator': build_generator,
+        'build_capnp_files': build_capnp_files,
     },
     data_files=[
         ('bin', ['gen/capnpc-cara']),
