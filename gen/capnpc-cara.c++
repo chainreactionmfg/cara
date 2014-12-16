@@ -597,31 +597,13 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
   //[[[end]]]
 };
 
-class CapnpcCara : public BasePythonGenerator {
+class CapnpcCaraFinishDecls : public BasePythonGenerator {
  public:
-  CapnpcCara(SchemaLoader& loader)
-    : BasePythonGenerator(loader) {}
+  CapnpcCaraFinishDecls(SchemaLoader& loader, FILE* fd)
+    : BasePythonGenerator(loader), fd_(fd) {}
  private:
   FILE* fd_;
   std::vector<std::string> decl_stack_;
-
-  bool pre_visit_file(Schema schema, RequestedFile requestedFile) override {
-    auto inputFilename = schema.getProto().getDisplayName();
-    kj::String outputFilename = kj::str(clean_filename(inputFilename), FILE_SUFFIX);
-    fd_ = fopen(outputFilename.cStr(), "w");
-
-    // Start the file
-    outputLine("from " MODULE_NAME " import " MODULE_NAME);
-    outputLine("");
-    outputLine("# Forward declarations:");
-
-    // Output 'forward decls' first.
-    CapnpcCaraForwardDecls decls(schemaLoader, fd_);
-    decls.traverse_file(schema, requestedFile);
-    outputLine("");
-    outputLine("# Finishing declarations:");
-    return false;
-  }
 
   bool post_visit_file(Schema, RequestedFile) override {
     if (stored_annotations_.size() != 0) {
@@ -770,6 +752,40 @@ class CapnpcCara : public BasePythonGenerator {
       start = kj::str(kj::mv(start), "\n    ");
     }
     outputLine(kj::str(start, end));
+  }
+
+};
+
+class CapnpcCara : public BaseGenerator {
+ public:
+  CapnpcCara(SchemaLoader& loader)
+    : BaseGenerator(loader) {}
+ private:
+  FILE* fd_;
+
+  void outputLine(kj::StringPtr line) {
+    fprintf(fd_, "%s\n", line.cStr());
+  }
+
+  bool pre_visit_file(Schema schema, RequestedFile requestedFile) override {
+    auto inputFilename = schema.getProto().getDisplayName();
+    kj::String outputFilename = kj::str(clean_filename(inputFilename), FILE_SUFFIX);
+    fd_ = fopen(outputFilename.cStr(), "w");
+
+    // Start the file
+    outputLine("from " MODULE_NAME " import " MODULE_NAME);
+    outputLine("");
+    // Output 'forward decls' first.
+    outputLine("# Forward declarations:");
+    CapnpcCaraForwardDecls decls(schemaLoader, fd_);
+    decls.traverse_file(schema, requestedFile);
+
+    outputLine("");
+    // Finally, finish the declarations.
+    outputLine("# Finishing declarations:");
+    CapnpcCaraFinishDecls forward(schemaLoader, fd_);
+    forward.traverse_file(schema, requestedFile);
+    return false;
   }
 
 };
