@@ -300,7 +300,7 @@ class BaseInterface(metaclass=InterfaceMeta):
       obj = self
     if inspect.isfunction(obj):
       return self._MethodWrapper(obj, method)
-    if obj == self:
+    if obj is self:
         # skip our getattribute when we're a direct subclass.
         func = super().__getattribute__(key)
     elif isinstance(obj, dict):
