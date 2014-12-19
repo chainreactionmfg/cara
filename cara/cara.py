@@ -145,8 +145,9 @@ class StructMeta(type):
     """Put all Field instances into __fields__."""
     cls.__annotations__ = annotations or []
     cls_fields = cls.__fields__ = {}
-    idfields = cls.__id_fields__ = {}
-    for field in fields or []:
+    fields = fields or []
+    idfields = cls.__id_fields__ = [None] * len(fields)
+    for field in fields:
       cls_fields[field.name] = field
       idfields[field.id] = field
 
@@ -199,6 +200,15 @@ class BaseStruct(dict, metaclass=StructMeta):
         for key, val in self.items())
     return '%s({%s})' % (type(self).__name__, data)
   __repr__ = __str__
+
+  def __hash__(self):
+    return hash(
+        hash(getattr(self, field.name)) for field in type(self).__id_fields__)
+
+  def __eq__(self, other):
+    return self is other or all(
+        getattr(self, field.name) == getattr(other, field.name)
+        for field in type(self).__id_fields__)
 
 
 class BaseList(list):
