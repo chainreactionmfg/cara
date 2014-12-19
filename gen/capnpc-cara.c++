@@ -83,7 +83,7 @@ kj::String check_keyword(T&& input) {
     if ch == '+':
       char_map.append('x')
     # Map [^\w_] to _
-    elif ch not in string.ascii_letters + string.digits + './':
+    elif ch not in string.ascii_letters + string.digits + '/':
       char_map.append('_')
     else:
       char_map.append(ch)
@@ -99,7 +99,7 @@ kj::String check_keyword(T&& input) {
     '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
     '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
     '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', 'x', '_',
-    '_', '.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '_',
+    '_', '_', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '_',
     '_', '_', '_', '_', '_', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
     'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
     'Z', '_', '_', '_', '_', '_', '_', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
@@ -140,13 +140,8 @@ kj::String check_keyword(T&& input) {
 }
 
 template<typename T>
-kj::String clean_filename(T&& filename, bool last=true) {
+kj::String clean_filename(T&& filename) {
   kj::String newFilename = kj::str(filename);
-  // Cut off first/last period.
-  auto found = last ? filename.findLast('.') : filename.findFirst('.');
-  KJ_IF_MAYBE(loc, found) {
-    newFilename = kj::str(filename.slice(0, *loc));
-  }
   return check_keyword(kj::mv(newFilename));
 }
 
@@ -172,6 +167,7 @@ class BasePythonGenerator : public BaseGenerator {
     auto&& proto = schema.getProto();
     kj::String name = kj::str(proto.getDisplayName());
     name = kj::str(name.slice(name.findFirst(':').orDefault(-1) + 1));
+    name = kj::str(check_keyword(name));
 
     auto is_import = [this] (auto id) {
       return (
@@ -216,7 +212,7 @@ class BasePythonGenerator : public BaseGenerator {
   }
 
   bool post_visit_annotation(schema::Annotation::Reader, Schema schema) {
-    annotations_.add(kj::str(check_keyword(display_name(schema)), "(",
+    annotations_.add(kj::str(display_name(schema), "(",
           pop_back(last_value_), ")"));
     return false;
   }
