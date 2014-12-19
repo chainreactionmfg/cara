@@ -68,7 +68,7 @@ const hash_set<std::string> KEYWORDS = {
 };
 //[[[end]]]
 template<typename T>
-kj::String check_keyword(T&& input) {
+kj::String check_keyword(T&& input, bool disallow_dots=false) {
   kj::String output = kj::str(kj::mv(input));
   // Append a _ for keywords.
   if (KEYWORDS.count(output.cStr()))
@@ -83,7 +83,7 @@ kj::String check_keyword(T&& input) {
     if ch == '+':
       char_map.append('x')
     # Map [^\w_] to _
-    elif ch not in string.ascii_letters + string.digits + '/':
+    elif ch not in string.ascii_letters + string.digits + './':
       char_map.append('_')
     else:
       char_map.append(ch)
@@ -99,7 +99,7 @@ kj::String check_keyword(T&& input) {
     '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
     '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
     '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', 'x', '_',
-    '_', '_', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '_',
+    '_', '.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '_',
     '_', '_', '_', '_', '_', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
     'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
     'Z', '_', '_', '_', '_', '_', '_', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
@@ -131,7 +131,11 @@ kj::String check_keyword(T&& input) {
       // If it's at the beginning, don't make it start with _.
       prepend = true;
     }
-    newFilenameStr[pos] = char_map[(int)match];
+    if (disallow_dots && match == '.') {
+      newFilenameStr[pos] = '_';
+    } else {
+      newFilenameStr[pos] = char_map[(int)match];
+    }
   }
   if (prepend) {
     newFilenameStr.insert(newFilenameStr.begin(), 'V');
@@ -142,7 +146,7 @@ kj::String check_keyword(T&& input) {
 template<typename T>
 kj::String clean_filename(T&& filename) {
   kj::String newFilename = kj::str(filename);
-  return check_keyword(kj::mv(newFilename));
+  return check_keyword(kj::mv(newFilename), /* disallow_dots */ true);
 }
 
 class BasePythonGenerator : public BaseGenerator {
