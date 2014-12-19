@@ -540,7 +540,7 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
     importPath.pop_back();
 
     if (importPath.size() == 0) {
-      fprintf(fd_, "import %s\n", name.c_str());
+      fprintf(fd_, "from . import %s\n", name.c_str());
     } else {
       fprintf(
           fd_, "from %s import %s\n",
