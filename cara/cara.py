@@ -12,7 +12,6 @@ import tornado.concurrent
 
 MARKER = records.Record('ObjectMarker', ['name'])
 AnnotationValue = records.Record('AnnotationValue', ['annotation', 'value'])
-Field = records.Record('Field', ['id', 'name', 'type'], {'annotations': list})
 Method = records.Record(
     'Method', ['id', 'name', 'input_params', 'output_params'],
     {'annotations': list})
@@ -46,17 +45,12 @@ BUILTIN_TYPES = {
     'Int8': int, 'Int16': int, 'Int32': int, 'Int64': int, 'Uint8': int,
     'Uint16': int, 'Uint32': int, 'Uint64': int, 'Float32': float,
     'Float64': float, 'Text': str, 'Data': bytes,
-    'Bool': bool, 'Void': lambda *_: None,
+    'Bool': bool, 'Void': lambda *_: None, 'AnyPointer': None,
 }
 
 mod = sys.modules[__name__]
 for name, checker in BUILTIN_TYPES.items():
     setattr(mod, name, type(name, (BuiltinType,), {'checker': checker}))
-
-
-class AnyPointer(object):
-    def __init__(self):
-        raise ValueError('AnyPointer cannot be instantiated.')
 
 
 def _ConvertToType(type, value):
@@ -152,6 +146,18 @@ class StructMeta(type):
       idfields[field.id] = field
 
 
+class Field(records.Record(
+    'Field', ['id', 'name', 'type'], {'annotations': list, 'default': None})):
+    @property
+    def default_value(self):
+        if self.default is not None:
+            return self.default
+        if not isinstance(self.type, BaseInterface):
+            return self.type()
+        # Interfaces have no default value.
+        return None
+
+
 class BaseStruct(dict, metaclass=StructMeta):
   __slots__ = ()
 
@@ -159,16 +165,17 @@ class BaseStruct(dict, metaclass=StructMeta):
   def Create(cls, **kwargs):
     return cls(kwargs)
 
-  def __init__(self, val):
+  def __init__(self, val=None):
     # val = {id: value} or {key: value}
     keep = {}
-    for k, v in val.items():
+    for k, v in (val or {}).items():
       if not isinstance(k, int):
         # val's keys are strings, so we're being created, switch to ints
         field = self._get_field_from_name(k)
         keep[field.id] = _ConvertToType(field.type, v)
       else:
         keep[k] = _ConvertToType(self._get_field_from_id(k).type, v)
+    # the internal dict is a mapping of integer id's to values
     super().__init__(keep)
 
   def __setattr__(self, attr, val):
@@ -186,6 +193,9 @@ class BaseStruct(dict, metaclass=StructMeta):
       item = field.id
     return super().__getitem__(item)
 
+  def __missing__(self, key):
+    return type(self).__id_fields__[key].default_value
+
   def _get_field_from_id(self, id):
     return type(self).__id_fields__[id]
 
@@ -202,13 +212,12 @@ class BaseStruct(dict, metaclass=StructMeta):
   __repr__ = __str__
 
   def __hash__(self):
-    return hash(
-        hash(getattr(self, field.name)) for field in type(self).__id_fields__)
+    return sum(hash(self[field.id]) for field in type(self).__id_fields__)
 
   def __eq__(self, other):
-    return self is other or all(
-        getattr(self, field.name) == getattr(other, field.name)
-        for field in type(self).__id_fields__)
+    return self is other or (type(self) is type(other) and all(
+        self[field.id] == other[field.id]
+        for field in type(self).__id_fields__))
 
 
 class BaseList(list):
@@ -218,8 +227,8 @@ class BaseList(list):
   def Create(cls, *args):
     return cls(args)
 
-  def __init__(self, val):
-    super().__init__(self.sub_type(v) for v in val)
+  def __init__(self, val=None):
+    super().__init__(self.sub_type(v) for v in (val or []))
 
   def __str__(self):
     return '%s([%s])' % (type(self).__name__,
