@@ -4,6 +4,7 @@
 #include <regex>
 #include <set>
 #include <stack>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "generic.h"
@@ -27,8 +28,8 @@ kj::String pop_back(string_stack& vect) {
 }
 
 template <typename T>
-kj::String to_py_array(T&& arr) {
-  return kj::str("[", kj::strArray(arr, ", "), "]");
+kj::String to_py_array(T&& arr, char begin = '[', char end = ']') {
+  return kj::str(begin, kj::strArray(arr, ", "), end);
 }
 
 struct StringWithId {
@@ -167,33 +168,78 @@ class BasePythonGenerator : public BaseGenerator {
 
   std::vector<unsigned long> importIds_;
 
-  kj::String display_name(Schema& schema) {
+  kj::String display_name(
+      const Schema& schema,
+      const schema::Brand::Reader& brand = schema::Brand::Reader{}) {
     auto&& proto = schema.getProto();
-    kj::String name = kj::str(proto.getDisplayName());
-    name = kj::str(name.slice(name.findFirst(':').orDefault(-1) + 1));
-    name = kj::str(check_keyword(name));
+    std::vector<kj::String> names;
 
+    std::unordered_map<uint64_t, List<schema::Brand::Binding>::Reader>
+      binding_map;
+    for(auto scope : brand.getScopes()) {
+      if (scope.isBind()) {
+        binding_map[scope.getScopeId()] = scope.getBind();
+      }
+    }
+    auto get_binding =
+          [&binding_map, &schema, this] (schema::Node::Reader proto) {
+      std::vector<kj::String> bindings;
+      auto iter = binding_map.find(proto.getId());
+      if (iter != binding_map.end()) {
+        for (auto binding : (*iter).second) {
+          if (binding.isUnbound()) {
+            bindings.emplace_back(kj::str("AnyPointer"));
+          } else {
+            TRAVERSE(type, schema, binding.getType());
+            bindings.emplace_back(pop_back(last_type_));
+          }
+        }
+        return to_py_array(bindings, '(', ')');
+      }
+      return kj::str();
+    };
+
+    auto get_name = [this, &get_binding] (schema::Node::Reader proto) -> kj::String {
+      auto parent = schemaLoader.get(proto.getScopeId());
+      for (auto nested : parent.getProto().getNestedNodes()) {
+        if (nested.getId() == proto.getId()) {
+          return kj::str(check_keyword(nested.getName()), get_binding(proto));
+        }
+      }
+      return kj::str("INVALID");
+    };
+
+    // Handle imports.
     auto is_import = [this] (auto id) {
       return (
           std::find(importIds_.begin(), importIds_.end(), id)
           != importIds_.end());
     };
-    auto scopeId = proto.getScopeId();
+
+    auto&& parent = proto;
+    auto scopeId = parent.getId();
     while (scopeId != 0) {
-      proto = schemaLoader.get(scopeId).getProto();
-      if (is_import(scopeId)) {
-        auto fn = kj::str(proto.getDisplayName());
-        fn = clean_filename(fn.slice(fn.findFirst('/').orDefault(-1) + 1));
-        name = kj::str(fn, ".", kj::mv(name));
+      parent = schemaLoader.get(scopeId).getProto();
+      if (parent.getScopeId() == 0) {
+        if (is_import(scopeId)) {
+          auto fn = kj::str(parent.getDisplayName());
+          fn = clean_filename(fn.slice(fn.findFirst('/').orDefault(-1) + 1));
+          names.emplace_back(kj::mv(fn));
+        }
+      } else {
+        names.emplace_back(get_name(parent));
       }
-      scopeId = proto.getScopeId();
+      scopeId = parent.getScopeId();
     }
-    return name;
+    std::reverse(names.begin(), names.end());
+    if (names.size() == 0) {
+      return kj::str("unsupported");
+    }
+    return kj::strArray(names, ".");
   }
 
   kj::String get_fields(std::string&& name) {
     std::vector<kj::String> fields;
-    using field_type = decltype(*fields_.begin());
     std::sort(fields_.begin(), fields_.end());
     for (auto &field : fields_) {
       fields.emplace_back(kj::str(MODULE, name, field.data));
@@ -210,24 +256,24 @@ class BasePythonGenerator : public BaseGenerator {
     return kj::strTree("");
   }
 
-  bool pre_visit_import(Schema, Import::Reader import) override {
+  bool pre_visit_import(const Schema&, const Import::Reader& import) override {
     importIds_.emplace_back(import.getId());
     return false;
   }
 
-  bool post_visit_annotation(schema::Annotation::Reader, Schema schema) {
+  bool post_visit_annotation(const schema::Annotation::Reader&, const Schema& schema) {
     annotations_.add(kj::str(display_name(schema), "(",
           pop_back(last_value_), ")"));
     return false;
   }
 
-  bool post_visit_annotations(Schema) {
+  bool post_visit_annotations(const Schema&) {
     stored_annotations_ = to_py_array(annotations_);
     annotations_.resize(0);
     return false;
   }
 
-  bool pre_visit_type(Schema schema, schema::Type::Reader type) {
+  bool pre_visit_type(const Schema& schema, const schema::Type::Reader& type) {
     switch (type.which()) {
       /*[[[cog
       types = ['void', 'bool', 'text', 'data', 'float32', 'float64']
@@ -286,34 +332,45 @@ class BasePythonGenerator : public BaseGenerator {
         last_type_.push(kj::str(MODULE "List(", pop_back(last_type_), ")"));
         break;
       case schema::Type::ENUM: {
-        auto enumSchema = schemaLoader.get(
-            type.getEnum().getTypeId(), type.getEnum().getBrand(), schema);
-        // TODO: Deal with generics here and the below types.
-        last_type_.push(kj::str(display_name(enumSchema)));
+        auto enumSchema = schemaLoader.get(type.getEnum().getTypeId());
+        last_type_.push(
+            kj::str(display_name(enumSchema, type.getEnum().getBrand())));
         break;
       }
       case schema::Type::INTERFACE: {
-        auto ifaceSchema = schemaLoader.get(
-            type.getInterface().getTypeId(), type.getInterface().getBrand(),
-            schema);
-        last_type_.push(kj::str(display_name(ifaceSchema)));
+        auto ifaceSchema = schemaLoader.get(type.getInterface().getTypeId());
+        last_type_.push(
+            kj::str(display_name(ifaceSchema, type.getInterface().getBrand())));
         break;
       }
       case schema::Type::STRUCT: {
-        auto structSchema = schemaLoader.get(
-            type.getStruct().getTypeId(), type.getStruct().getBrand(), schema);
-        last_type_.push(kj::str(display_name(structSchema)));
+        auto structSchema = schemaLoader.get(type.getStruct().getTypeId());
+        last_type_.push(
+            kj::str(display_name(structSchema, type.getStruct().getBrand())));
         break;
       }
-      case schema::Type::ANY_POINTER:
-        last_type_.push(kj::str(MODULE "AnyPointer"));
+      case schema::Type::ANY_POINTER: {
+        auto ptr = type.getAnyPointer();
+        if (ptr.isParameter()) {
+          auto param = ptr.getParameter();
+          auto param_schema = schemaLoader.get(param.getScopeId());
+          auto name = display_name(param_schema);
+          last_type_.push(kj::str(name, ".Template(", param.getParameterIndex(), ")"));
+        } else if (ptr.isImplicitMethodParameter()) {
+          auto param = ptr.getImplicitMethodParameter();
+          last_type_.push(kj::str(MODULE "ImplicitTemplate(", param.getParameterIndex(), ")"));
+        } else {
+          last_type_.push(kj::str(MODULE "AnyPointer"));
+        }
+
         break;
+      }
     }
     return true;
   }
 
   bool pre_visit_dynamic_value(
-      Schema schema, Type type, DynamicValue::Reader value) {
+      const Schema& schema, const Type& type, const DynamicValue::Reader& value) {
     auto convertFloat = [this] (auto floatVal) {
       if (std::isinf(floatVal)) {
         if (floatVal > 0) {
@@ -437,7 +494,8 @@ class BasePythonGenerator : public BaseGenerator {
     return false;
   }
 
-  bool post_visit_enumerant(Schema, EnumSchema::Enumerant enumerant) {
+  bool post_visit_enumerant(
+      const Schema&, const EnumSchema::Enumerant& enumerant) override {
     enumerants_.emplace_back(StringWithId {enumerant.getOrdinal(), kj::str(
         MODULE "Enumerant(name=\"", enumerant.getProto().getName(),
         "\", ordinal=", enumerant.getOrdinal(), get_stored_annotations(),
@@ -445,14 +503,16 @@ class BasePythonGenerator : public BaseGenerator {
     return false;
   }
 
-  bool post_visit_struct_field_slot(StructSchema, StructSchema::Field field, schema::Field::Slot::Reader) {
+  bool post_visit_struct_field_slot(
+      const StructSchema&, const StructSchema::Field& field,
+      const schema::Field::Slot::Reader&) {
     fields_.emplace_back(StringWithId {field.getIndex(), kj::str("(id=",
           field.getIndex(), ", name=\"", field.getProto().getName(),
           "\", type=", pop_back(last_type_), get_stored_annotations(), ")")});
     return false;
   }
 
-  bool traverse_method(Schema schema, InterfaceSchema::Method method) override {
+  bool traverse_method(const Schema& schema, const InterfaceSchema::Method& method) override {
     auto methodProto = method.getProto();
     auto interface = schema.asInterface();
     auto proto = method.getProto();
@@ -493,7 +553,7 @@ class EnumForwardDecl : public BasePythonGenerator {
  private:
   FILE* fd_;
   std::vector<std::string> decl_stack_;
-  bool post_visit_enum_decl(Schema, NestedNode decl) {
+  bool post_visit_enum_decl(const Schema&, const NestedNode& decl) {
     fprintf(
         fd_, "%s = " MODULE "Enum(name=\"%s\", enumerants=%s)\n",
         kj::strArray(decl_stack_, ".").cStr(), decl.getName().cStr(),
@@ -501,7 +561,7 @@ class EnumForwardDecl : public BasePythonGenerator {
     return false;
   }
 
-  bool post_visit_annotations(Schema) {
+  bool post_visit_annotations(const Schema&) {
     // Ignore all annotations for enum forward decls, they'll show up again
     // when we need them.
     annotations_.resize(0);
@@ -520,13 +580,18 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
   std::vector<std::string> decl_stack_;
 
   template<typename T>
-  void outputDecl(std::string&& type, T&& name) {
+  void outputDecl(std::string&& type, T&& name,
+                  kj::String templates = kj::str("")) {
+    if (templates.size()) {
+      templates = kj::str(", templates=", kj::mv(templates));
+    }
     fprintf(
-        fd_, "%s = " MODULE "%s(name=\"%s\")\n",
-        kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr());
+        fd_, "%s = " MODULE "%s(name=\"%s\"%s)\n",
+        kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr(),
+        templates.cStr());
   }
 
-  bool pre_visit_import(Schema, Import::Reader import) override {
+  bool pre_visit_import(const Schema&, const Import::Reader& import) override {
     auto path = import.getName();
     bool root = path.startsWith("/");
     if (root) path = path.slice(1);
@@ -554,17 +619,17 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
     return false;
   }
 
-  bool pre_visit_decl(Schema, NestedNode decl) {
+  bool pre_visit_decl(const Schema&, const NestedNode& decl) {
     decl_stack_.emplace_back(check_keyword(decl.getName()).cStr());
     return false;
   }
 
-  bool post_visit_decl(Schema, NestedNode) {
+  bool post_visit_decl(const Schema&, const NestedNode&) {
     decl_stack_.pop_back();
     return false;
   }
 
-  bool pre_visit_enum_decl(Schema schema, NestedNode decl) {
+  bool pre_visit_enum_decl(const Schema& schema, const NestedNode& decl) {
     // Output all the fields of the enum in the forward decl.
     EnumForwardDecl enumDecl {schemaLoader, fd_, decl_stack_};
     enumDecl.traverse_enum_decl(schema, decl);
@@ -572,29 +637,49 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
   }
   /*[[[cog
   decls = ['const', 'annotation', 'struct', 'interface']
+  generics = ['struct', 'interface']
   for decl in decls:
-    cog.outl('bool pre_visit_%s_decl(Schema, NestedNode decl) {' % decl)
-    cog.outl('  outputDecl("%s", decl.getName());' % decl.title())
+    generic = decl in generics
+    cog.outl('bool pre_visit_%s_decl(const Schema&%s, const NestedNode& decl) {' % (
+        decl, ' schema' if generic else ''))
+    if generic:
+      cog.outl('  doBranding("%s", schema, decl.getName());' % decl.title())
+    else:
+      cog.outl('  outputDecl("%s", decl.getName());' % decl.title())
     cog.outl('  return false;')
     cog.outl('}')
   ]]]*/
-  bool pre_visit_const_decl(Schema, NestedNode decl) {
+  bool pre_visit_const_decl(const Schema&, const NestedNode& decl) {
     outputDecl("Const", decl.getName());
     return false;
   }
-  bool pre_visit_annotation_decl(Schema, NestedNode decl) {
+  bool pre_visit_annotation_decl(const Schema&, const NestedNode& decl) {
     outputDecl("Annotation", decl.getName());
     return false;
   }
-  bool pre_visit_struct_decl(Schema, NestedNode decl) {
-    outputDecl("Struct", decl.getName());
+  bool pre_visit_struct_decl(const Schema& schema, const NestedNode& decl) {
+    doBranding("Struct", schema, decl.getName());
     return false;
   }
-  bool pre_visit_interface_decl(Schema, NestedNode decl) {
-    outputDecl("Interface", decl.getName());
+  bool pre_visit_interface_decl(const Schema& schema, const NestedNode& decl) {
+    doBranding("Interface", schema, decl.getName());
     return false;
   }
   //[[[end]]]
+  void doBranding(std::string&& type, Schema schema, Text::Reader&& name) {
+    auto&& proto = schema.getProto();
+    if (proto.getParameters().size() == 0) {
+      outputDecl(std::move(type), name);
+    } else {
+      std::vector<std::string> params;
+      for (auto param : proto.getParameters()) {
+        params.emplace_back(kj::str('"', param.getName(), '"').cStr());
+      }
+      outputDecl(
+          kj::str("Templated", std::move(type)).cStr(), name,
+          to_py_array(params));
+    }
+  }
 };
 
 class CapnpcCaraFinishDecls : public BasePythonGenerator {
@@ -605,7 +690,7 @@ class CapnpcCaraFinishDecls : public BasePythonGenerator {
   FILE* fd_;
   std::vector<std::string> decl_stack_;
 
-  bool post_visit_file(Schema, RequestedFile) override {
+  bool post_visit_file(const Schema&, const RequestedFile&) override {
     if (stored_annotations_.size() != 0) {
       outputLine("");
       outputLine(kj::str("__annotations__ = ", kj::mv(stored_annotations_)));
@@ -614,33 +699,33 @@ class CapnpcCaraFinishDecls : public BasePythonGenerator {
     return false;
   }
 
-  void outputLine(kj::StringPtr line) {
+  void outputLine(kj::StringPtr&& line) {
     fprintf(fd_, "%s\n", line.cStr());
   }
 
-  bool pre_visit_decl(Schema, NestedNode decl) {
+  bool pre_visit_decl(const Schema&, const NestedNode& decl) {
     decl_stack_.emplace_back(check_keyword(decl.getName()).cStr());
     return false;
   }
 
-  bool post_visit_decl(Schema, NestedNode) {
+  bool post_visit_decl(const Schema&, const NestedNode&) {
     decl_stack_.pop_back();
     return false;
   }
 
-  bool post_visit_const_decl(Schema, NestedNode) {
+  bool post_visit_const_decl(const Schema&, const NestedNode&) {
     finish_decl("type=", pop_back(last_type_),
           ", value=", pop_back(last_value_), get_stored_annotations());
     return false;
   }
 
-  bool post_visit_struct_decl(Schema, NestedNode) {
+  bool post_visit_struct_decl(const Schema&, const NestedNode&) {
     finish_decl(
         "fields=", get_fields("Field"), get_stored_annotations());
     return false;
   }
 
-  bool post_visit_interface_decl(Schema schema, NestedNode) {
+  bool post_visit_interface_decl(const Schema& schema, const NestedNode&) {
     kj::Vector<kj::String> supers;
     for (auto super : schema.asInterface().getSuperclasses()) {
       supers.add(kj::str(display_name(super)));
@@ -651,7 +736,7 @@ class CapnpcCaraFinishDecls : public BasePythonGenerator {
     return false;
   }
 
-  bool post_visit_annotation_decl(Schema schema, NestedNode) {
+  bool post_visit_annotation_decl(const Schema& schema, const NestedNode&) {
     auto proto = schema.getProto().getAnnotation();
     int count = 0;
     kj::Vector<kj::String> targets;
@@ -735,7 +820,7 @@ class CapnpcCaraFinishDecls : public BasePythonGenerator {
     return false;
   }
 
-  bool post_visit_enum_decl(Schema, NestedNode) {
+  bool post_visit_enum_decl(const Schema&, const NestedNode&) {
     finish_decl(
         "enumerants=", to_py_array(to_sorted_vector(enumerants_)),
         get_stored_annotations());
@@ -745,9 +830,9 @@ class CapnpcCaraFinishDecls : public BasePythonGenerator {
 
   template<typename... Args>
   void finish_decl(Args&&... args) {
-    kj::String start = kj::str(kj::strArray(decl_stack_, "."),
+    kj::String&& start = kj::str(kj::strArray(decl_stack_, "."),
           ".FinishDeclaration(");
-    kj::String end = kj::str(std::forward<Args>(args)..., ")");
+    kj::String&& end = kj::str(std::forward<Args>(args)..., ")");
     if (end.size() + start.size() >= 80) {
       start = kj::str(kj::mv(start), "\n    ");
     }
@@ -763,11 +848,11 @@ class CapnpcCara : public BaseGenerator {
  private:
   FILE* fd_;
 
-  void outputLine(kj::StringPtr line) {
+  void outputLine(kj::StringPtr&& line) {
     fprintf(fd_, "%s\n", line.cStr());
   }
 
-  bool pre_visit_file(Schema schema, RequestedFile requestedFile) override {
+  bool pre_visit_file(const Schema& schema, const RequestedFile& requestedFile) override {
     auto inputFilename = schema.getProto().getDisplayName();
     kj::String outputFilename = kj::str(clean_filename(inputFilename), FILE_SUFFIX);
     fd_ = fopen(outputFilename.cStr(), "w");
