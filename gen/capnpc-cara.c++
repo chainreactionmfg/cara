@@ -231,10 +231,11 @@ class BasePythonGenerator : public BaseGenerator {
       }
       scopeId = parent.getScopeId();
     }
-    std::reverse(names.begin(), names.end());
+
     if (names.size() == 0) {
       return kj::str("unsupported");
     }
+    std::reverse(names.begin(), names.end());
     return kj::strArray(names, ".");
   }
 
@@ -354,15 +355,20 @@ class BasePythonGenerator : public BaseGenerator {
         if (ptr.isParameter()) {
           auto param = ptr.getParameter();
           auto param_schema = schemaLoader.get(param.getScopeId());
-          auto name = display_name(param_schema);
-          last_type_.push(kj::str(name, ".Template(", param.getParameterIndex(), ")"));
+          if (param_schema.getProto().getScopeId() == 0) {
+            last_type_.push(
+                kj::str(MODULE "MethodTemplate(", param.getParameterIndex(), ")"));
+          } else {
+            auto name = display_name(param_schema);
+            last_type_.push(
+                kj::str(name, ".Template(", param.getParameterIndex(), ")"));
+          }
         } else if (ptr.isImplicitMethodParameter()) {
           auto param = ptr.getImplicitMethodParameter();
-          last_type_.push(kj::str(MODULE "ImplicitTemplate(", param.getParameterIndex(), ")"));
+          last_type_.push(kj::str(MODULE "MethodTemplate(", param.getParameterIndex(), ")"));
         } else {
           last_type_.push(kj::str(MODULE "AnyPointer"));
         }
-
         break;
       }
     }
@@ -516,18 +522,48 @@ class BasePythonGenerator : public BaseGenerator {
     auto methodProto = method.getProto();
     auto interface = schema.asInterface();
     auto proto = method.getProto();
-    auto line = kj::strTree(
+    kj::StringTree line;
+    if (methodProto.getImplicitParameters().size()) {
+      auto params = methodProto.getImplicitParameters();
+      std::vector<std::string> templates;
+      std::transform(
+          params.begin(), params.end(), std::back_inserter(templates),
+          [] (auto const&& param) {
+            return '"' + std::string(param.getName().cStr()) + '"';
+      });
+      line = kj::strTree(
+        MODULE "TemplatedMethod(id=", method.getIndex(),
+        ", name=\"", proto.getName(), "\", templates=", to_py_array(templates));
+    } else {
+      line = kj::strTree(
         MODULE "Method(id=", method.getIndex(),
         ", name=\"", proto.getName(), "\"");
+    }
     // Params
-    TRAVERSE(param_list, interface, kj::str("_"), method.getParamType());
-    line = kj::strTree(
-        kj::mv(line), ", input_params=", get_fields("Param"));
+    if (method.getParamType().getProto().getScopeId() == 0) {
+      // Auto-generated 'struct'.
+      TRAVERSE(param_list, interface, kj::str("_"), method.getParamType());
+      line = kj::strTree(
+          kj::mv(line), ", input_params=", get_fields("Param"));
+    } else {
+      // Pre-existing struct.
+      auto param = display_name(method.getParamType(),
+                                 methodProto.getParamBrand());
+      line = kj::strTree(kj::mv(line), ", input_params=", param);
+    }
 
     // Results
-    TRAVERSE(param_list, interface, kj::str("_"), method.getResultType());
-    line = kj::strTree(
-        kj::mv(line), ", output_params=", get_fields("Param"));
+    if (method.getResultType().getProto().getScopeId() == 0) {
+      // Auto-generated 'struct'.
+      TRAVERSE(param_list, interface, kj::str("_"), method.getResultType());
+      line = kj::strTree(
+          kj::mv(line), ", output_params=", get_fields("Param"));
+    } else {
+      // Pre-existing struct.
+      auto result = display_name(method.getResultType(),
+                                 methodProto.getResultBrand());
+      line = kj::strTree(kj::mv(line), ", output_params=", result);
+    }
 
     // Annotations
     TRAVERSE(annotations, schema, methodProto.getAnnotations());
@@ -583,12 +619,16 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
   void outputDecl(std::string&& type, T&& name,
                   kj::String templates = kj::str("")) {
     if (templates.size()) {
-      templates = kj::str(", templates=", kj::mv(templates));
+      fprintf(
+          fd_, "%s = " MODULE "Templated(" MODULE "%s, name=\"%s\", templates=%s)\n",
+          kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr(),
+          templates.cStr());
+    } else {
+      fprintf(
+          fd_, "%s = " MODULE "%s(name=\"%s\"%s)\n",
+          kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr(),
+          templates.cStr());
     }
-    fprintf(
-        fd_, "%s = " MODULE "%s(name=\"%s\"%s)\n",
-        kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr(),
-        templates.cStr());
   }
 
   bool pre_visit_import(const Schema&, const Import::Reader& import) override {
@@ -668,17 +708,11 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
   //[[[end]]]
   void doBranding(std::string&& type, Schema schema, Text::Reader&& name) {
     auto&& proto = schema.getProto();
-    if (proto.getParameters().size() == 0) {
-      outputDecl(std::move(type), name);
-    } else {
-      std::vector<std::string> params;
-      for (auto param : proto.getParameters()) {
-        params.emplace_back(kj::str('"', param.getName(), '"').cStr());
-      }
-      outputDecl(
-          kj::str("Templated", std::move(type)).cStr(), name,
-          to_py_array(params));
+    std::vector<std::string> params;
+    for (auto param : proto.getParameters()) {
+      params.emplace_back(kj::str('"', param.getName(), '"').cStr());
     }
+    outputDecl(std::move(type), name, to_py_array(params));
   }
 };
 
