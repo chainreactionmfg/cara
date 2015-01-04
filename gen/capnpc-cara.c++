@@ -544,12 +544,12 @@ class BasePythonGenerator : public BaseGenerator {
       // Auto-generated 'struct'.
       TRAVERSE(param_list, interface, kj::str("_"), method.getParamType());
       line = kj::strTree(
-          kj::mv(line), ", input_params=", get_fields("Param"));
+          kj::mv(line), ", params=", get_fields("Param"));
     } else {
       // Pre-existing struct.
       auto param = display_name(method.getParamType(),
                                  methodProto.getParamBrand());
-      line = kj::strTree(kj::mv(line), ", input_params=", param);
+      line = kj::strTree(kj::mv(line), ", params=", param);
     }
 
     // Results
@@ -557,12 +557,12 @@ class BasePythonGenerator : public BaseGenerator {
       // Auto-generated 'struct'.
       TRAVERSE(param_list, interface, kj::str("_"), method.getResultType());
       line = kj::strTree(
-          kj::mv(line), ", output_params=", get_fields("Param"));
+          kj::mv(line), ", results=", get_fields("Param"));
     } else {
       // Pre-existing struct.
       auto result = display_name(method.getResultType(),
                                  methodProto.getResultBrand());
-      line = kj::strTree(kj::mv(line), ", output_params=", result);
+      line = kj::strTree(kj::mv(line), ", results=", result);
     }
 
     // Annotations

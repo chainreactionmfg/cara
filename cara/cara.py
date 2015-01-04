@@ -13,7 +13,7 @@ import tornado.concurrent
 MARKER = records.Record('ObjectMarker', ['name'])
 AnnotationValue = records.Record('AnnotationValue', ['annotation', 'value'])
 Method = records.Record(
-    'Method', ['id', 'name', 'input_params', 'output_params'],
+    'Method', ['id', 'name', 'params', 'results'],
     {'annotations': list})
 Param = records.Record('Param', ['id', 'name', 'type'], {'annotations': list})
 Enumerant = records.Record(
@@ -270,6 +270,11 @@ class InterfaceMeta(type):
     # Lastly, only allow __new__ to be overridden on this particular class.
     cls.__new__ = cls.NewWrapper
 
+  def __getattr__(cls, method_name):
+    print(method_name)
+    if method_name in cls.__methods__:
+      pass
+
 RemoteInterfaceDescriptor = records.Record(
     'RemoteInterfaceDescriptor', ['remote_id', 'client'])
 
@@ -345,17 +350,17 @@ class BaseInterface(metaclass=InterfaceMeta):
           return param
       # Convert input params to proper types first.
       args = (_ConvertToType(param.type, arg)
-              for param, arg in zip(method.input_params, args))
+              for param, arg in zip(method.params, args))
       kwargs = {
-          name: _ConvertToType(_GetParam(name, method.input_params).type, arg)
+          name: _ConvertToType(_GetParam(name, method.params).type, arg)
           for name, arg in kwargs.items()}
       result = func(*args, **kwargs)
 
       # Convert result to proper types now.
-      if len(method.output_params) == 0:
+      if len(method.results) == 0:
         return result
-      if len(method.output_params) == 1:
-        param = method.output_params[0]
+      if len(method.results) == 1:
+        param = method.results[0]
         if (isinstance(result, dict)
             and len(result) == 1 and param.name in result):
           # Dict with only the one output param was returned, so unbox it.
@@ -364,23 +369,23 @@ class BaseInterface(metaclass=InterfaceMeta):
         return _ConvertToType(param.type, result)
 
       if ((isinstance(result, (tuple, list))
-           and len(method.output_params) == len(result))
+           and len(method.results) == len(result))
           or inspect.isgenerator(result)):
         # Convert results according to param id. Not the wisest choice, but
         # still valid. Also, generated param lists are sorted.
         return {param.name: _ConvertToType(param.type, res)
-                for param, res in zip(method.output_params, result)}
+                for param, res in zip(method.results, result)}
 
       if (not isinstance(result, dict)
-          or len(result) != len(method.output_params)):
+          or len(result) != len(method.results)):
         raise TypeError('Multiple output parameters for %s requires a list, '
                         'tuple, or dict to be returned with the right number '
                         'of elements (%s given, %d args needed)' % (
-                            method.name, result, len(method.output_params)))
+                            method.name, result, len(method.results)))
 
       # The result is solely a dict, so convert them.
       return {param.name: _ConvertToType(param.type, result[param.name])
-              for param in method.output_params}
+              for param in method.results}
     return _Wrapper
 
   def __str__(self):
@@ -406,3 +411,11 @@ class RemoteInterface(records.Record(
           return self.client.registered(self.remote_id, method.id, args, kwargs)
       return BaseInterface._MethodWrapper(ProxyMethod, method)
   __getitem__ = __getattr__
+
+
+class Templated(records.Record('Templated', ['type', 'name', 'templates'])):
+  pass
+
+
+class TemplatedMethod(Method):
+  optional_attributes = {'templates': list}

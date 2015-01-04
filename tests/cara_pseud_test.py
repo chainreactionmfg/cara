@@ -10,18 +10,18 @@ from pseud._tornado import async_sleep
 FooIface = cara.Interface('FooIface')
 FooIface.FinishDeclaration(methods=[
     cara.Method(id=0, name='callback',
-                input_params=[cara.Param(id=0, name='foo', type=FooIface)],
-                output_params=[])])
+                params=[cara.Param(id=0, name='foo', type=FooIface)],
+                results=[])])
 BarIface = cara.Interface('BarIface')
 BazIface = cara.Interface('BazIface')
 BarIface.FinishDeclaration(methods=[
     cara.Method(id=0, name='return_cb',
-                input_params=[],
-                output_params=[cara.Param(id=0, name='cb', type=BazIface)])])
+                params=[],
+                results=[cara.Param(id=0, name='cb', type=BazIface)])])
 BazIface.FinishDeclaration(methods=[
     cara.Method(id=0, name='call',
-                input_params=[cara.Param(id=0, name='is_called', type=cara.Bool)],
-                output_params=[])])
+                params=[cara.Param(id=0, name='is_called', type=cara.Bool)],
+                results=[])])
 
 
 class PseudTest(tornado.testing.AsyncTestCase):

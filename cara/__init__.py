@@ -7,5 +7,5 @@ cara.Struct(...)
 
 cara.cara_pseud.register_client(...)
 """
-from cara import *
-import cara_pseud
+from cara.cara import *
+from cara import cara_pseud
