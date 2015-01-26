@@ -1,10 +1,12 @@
 import glob
 import os
 import subprocess
+import sys
 
 from distutils import ccompiler
 from distutils.command.build import build
 from setuptools import setup
+from setuptools.command.test import test
 
 MAJOR = 0
 MINOR = 2
@@ -73,6 +75,22 @@ class build_capnp_files(build):
                 output.decode('ascii'),
                 os.path.join(self.build_lib, 'cara', 'capnp'))
 
+
+class pytest(test):
+    user_options = [('pytest-args=', 'a', "Arguments to pass to py.test")]
+    def initialize_options(self):
+        super().initialize_options()
+        self.pytest_args = ['tests']
+
+    def finalize_options(self):
+        super().finalize_options()
+        self.test_args = []
+        self.test_suite = True
+
+    def run(self):
+        import pytest
+        sys.exit(pytest.main(self.pytest_args))
+
 setup(
     name='cara',
     packages=['cara', 'cara.capnp'],
@@ -87,6 +105,7 @@ setup(
         'build': cara_build,
         'build_generator': build_generator,
         'build_capnp_files': build_capnp_files,
+        'test': pytest,
     },
     data_files=[
         ('bin', ['gen/capnpc-cara']),
