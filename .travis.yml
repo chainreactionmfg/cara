@@ -8,6 +8,8 @@ env:
 
 install:
   - git submodule update --init --recursive
+  - pip install tox
+  - pip install -e .
 
 script:
   - tox -e $TESTENV
