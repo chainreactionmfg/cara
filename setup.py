@@ -5,7 +5,7 @@ import sys
 
 from distutils import ccompiler
 from distutils.command.build import build
-from setuptools import setup
+from setuptools import setup, Command
 from setuptools.command.test import test
 
 MAJOR = 0
@@ -27,6 +27,18 @@ class cara_build(build):
         self.run_command('build_generator')
         self.run_command('build_included_capnp')
         super().run()
+
+
+class update_submodules(Command):
+    """Inspired by IPython's UpdateSubmodules:
+    https://github.com/ipython/ipython/blob/01a6d2384331e07a7e8249d75f4baa49aa85069c/setupbase.py#L532
+    """
+    description = "Update git submodules."
+    user_options = []
+    initialize_options = finalize_options = lambda self: None
+
+    def run(self):
+        self.spawn('git submodule update --init --recursive'.split())
 
 
 class build_generator(build):
@@ -128,6 +140,7 @@ setup(
         'build_generator': build_generator,
         'build_included_capnp': build_included_capnp,
         'build_test_capnp': build_test_capnp,
+        'update_submodules': update_submodules,
         'test': pytest,
     },
     data_files=[
