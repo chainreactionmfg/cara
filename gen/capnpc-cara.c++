@@ -200,7 +200,7 @@ class BasePythonGenerator : public BaseGenerator {
             bindings.emplace_back(pop_back(last_type_));
           }
         }
-        return to_py_array(bindings, '(', ')');
+        return to_py_array(bindings);
       }
       return kj::str();
     };
