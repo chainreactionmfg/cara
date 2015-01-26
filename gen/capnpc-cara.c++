@@ -760,8 +760,9 @@ class CapnpcCaraFinishDecls : public BasePythonGenerator {
 
   bool post_visit_interface_decl(const Schema& schema, const NestedNode&) {
     kj::Vector<kj::String> supers;
-    for (auto super : schema.asInterface().getSuperclasses()) {
-      supers.add(kj::str(display_name(super)));
+    for (auto super : schema.getProto().getInterface().getSuperclasses()) {
+      auto superSchema = schemaLoader.getUnbound(super.getId());
+      supers.add(display_name(superSchema, super.getBrand()));
     }
     finish_decl("superclasses=[", kj::strArray(supers, ", "), "], methods=",
         to_py_array(to_sorted_vector(methods_)), get_stored_annotations());
