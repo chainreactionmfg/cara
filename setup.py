@@ -25,7 +25,7 @@ class cara_build(build):
         # Have to build the .capnp files into .py files before the packages are
         # checked, otherwise these would be sub_commands.
         self.run_command('build_generator')
-        self.run_command('build_capnp_files')
+        self.run_command('build_included_capnp')
         super().run()
 
 
@@ -59,28 +59,43 @@ class build_capnp_files(build):
     def execute(self, cmd):
         return subprocess.check_output(cmd)
 
+    def compile_file(self, filename, target_dir):
+        self.execute([
+            'capnp', 'compile', '-o', 'gen/capnpc-cara', filename,
+            '--src-prefix', os.path.dirname(filename)])
+        output = os.path.basename(filename).replace(b'.capnp', b'_capnp.py')
+        output = output.replace(b'+', b'x').replace(b'-', b'_')
+        self.move_file(output.decode('ascii'), target_dir)
+
+
+class build_included_capnp(build_capnp_files):
     def run(self):
         # Find c++.capnp and friends first.
         capnp_dir = self.execute(
             'pkg-config --variable=includedir capnp'.split()).strip()
+        self.mkpath(os.path.join(self.build_lib, 'cara', 'capnp'))
         for filename in glob.glob(capnp_dir + b'/capnp/*.capnp'):
-            output = os.path.basename(filename).replace(b'.capnp', b'.py')
-            output = output.replace(b'+', b'x').replace(b'-', b'_')
             # Then run capnp compile -ocara filename --src-prefix=dirname
-            self.execute([
-                'capnp', 'compile', '-o', 'gen/capnpc-cara', filename,
-                '--src-prefix', os.path.dirname(filename)])
-            self.mkpath(os.path.join(self.build_lib, 'cara', 'capnp'))
-            self.move_file(
-                output.decode('ascii'),
-                os.path.join(self.build_lib, 'cara', 'capnp'))
+            self.compile_file(
+                filename, os.path.join(self.build_lib, 'cara', 'capnp'))
+
+
+class build_test_capnp(build_capnp_files):
+    def run(self):
+        for filename in glob.glob(os.path.join(b'tests', b'*.capnp')):
+            self.compile_file(filename, os.path.join('tests'))
 
 
 class pytest(test):
-    user_options = [('pytest-args=', 'a', "Arguments to pass to py.test")]
+    user_options = [
+        ('pytest-args=', None, "Arguments to pass to py.test"),
+        ('pytest-cov=', None, "Enable coverage. Choose output type: "
+         "term, html, xml, annotate, or multiple with comma separation"),
+    ]
     def initialize_options(self):
         super().initialize_options()
-        self.pytest_args = ['tests']
+        self.pytest_args = 'tests'
+        self.pytest_cov = None
 
     def finalize_options(self):
         super().finalize_options()
@@ -88,8 +103,15 @@ class pytest(test):
         self.test_suite = True
 
     def run(self):
+        self.run_command('build_generator')
+        self.run_command('build_test_capnp')
         import pytest
-        sys.exit(pytest.main(self.pytest_args))
+        cov = ''
+        if self.pytest_cov is not None:
+            outputs = ' '.join('--cov-report %s' % output
+                               for output in self.pytest_cov.split(','))
+            cov = ' --no-cov-on-fail --cov cara ' + outputs
+        sys.exit(pytest.main(self.pytest_args + cov))
 
 setup(
     name='cara',
@@ -104,7 +126,8 @@ setup(
     cmdclass={
         'build': cara_build,
         'build_generator': build_generator,
-        'build_capnp_files': build_capnp_files,
+        'build_included_capnp': build_included_capnp,
+        'build_test_capnp': build_test_capnp,
         'test': pytest,
     },
     data_files=[
