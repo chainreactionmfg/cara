@@ -1,7 +1,13 @@
 language: python
-python:
-  - "3.4"
+
+cache:
+  pip
+
+env:
+  - TESTENV=py34
+
 install:
   - git submodule update --init --recursive
-  - pip install .
-script: python setup.py test
+
+script:
+  - tox -e $TESTENV
