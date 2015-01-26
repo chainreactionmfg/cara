@@ -526,11 +526,18 @@ class BasePythonGenerator : public BaseGenerator {
   }
 
   bool post_visit_struct_field_slot(
-      const StructSchema&, const StructSchema::Field& field,
+      const StructSchema& schema, const StructSchema::Field& field,
       const schema::Field::Slot::Reader&) {
+    kj::String default_value;
+    auto proto = field.getProto();
+    if (proto.getSlot().getHadExplicitDefault()) {
+      TRAVERSE(value, schema, field.getType(), proto.getSlot().getDefaultValue());
+      default_value = kj::str(", default=", pop_back(last_value_));
+    }
     fields_.emplace_back(StringWithId {field.getIndex(), kj::str("(id=",
           field.getIndex(), ", name=\"", field.getProto().getName(),
-          "\", type=", pop_back(last_type_), get_stored_annotations(), ")")});
+          "\"", default_value, ", type=", pop_back(last_type_),
+          get_stored_annotations(), ")")});
     return false;
   }
 
