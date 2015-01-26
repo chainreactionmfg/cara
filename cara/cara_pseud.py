@@ -74,7 +74,7 @@ def _find_interface(cls, interface):
 def register_interface(server, interface=None, obj_or_cls=None):
     """Registers an object with the given server (or client).
 
-    Call iths with a server and an object, and optionally an interface.
+    Call this with a server and an object, and optionally an interface.
 
     If called with only a server, it will become a decorator and must be called
     on a class that can be constructed with no arguments. If the interface has a
