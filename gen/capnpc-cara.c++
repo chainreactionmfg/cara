@@ -154,8 +154,14 @@ class BasePythonGenerator : public BaseGenerator {
  public:
   BasePythonGenerator(SchemaLoader& loader)
     : BaseGenerator(loader) {}
+  BasePythonGenerator(SchemaLoader& loader,
+                      std::vector<std::string> decl_stack)
+    : BaseGenerator(loader),
+      decl_stack_(decl_stack) {}
 
  protected:
+  std::vector<std::string> decl_stack_;
+
   std::vector<StringWithId> fields_;
   std::vector<StringWithId> enumerants_;
   std::vector<StringWithId> methods_;
@@ -262,8 +268,18 @@ class BasePythonGenerator : public BaseGenerator {
     return false;
   }
 
-  bool post_visit_annotation(const schema::Annotation::Reader&, const Schema& schema) {
-    annotations_.add(kj::str(display_name(schema), "(",
+  bool pre_visit_decl(const Schema&, const NestedNode& decl) {
+    decl_stack_.emplace_back(check_keyword(decl.getName()).cStr());
+    return false;
+  }
+
+  bool post_visit_decl(const Schema&, const NestedNode&) {
+    decl_stack_.pop_back();
+    return false;
+  }
+
+  bool post_visit_annotation(const schema::Annotation::Reader& annotation, const Schema& schema) {
+    annotations_.add(kj::str(display_name(schema, annotation.getBrand()), "(",
           pop_back(last_value_), ")"));
     return false;
   }
@@ -583,12 +599,10 @@ class EnumForwardDecl : public BasePythonGenerator {
   EnumForwardDecl(
       SchemaLoader& loader, FILE* fd,
       std::vector<std::string> decl_stack)
-    : BasePythonGenerator(loader),
-      fd_(fd),
-      decl_stack_(decl_stack) {}
+    : BasePythonGenerator(loader, decl_stack),
+      fd_(fd) {}
  private:
   FILE* fd_;
-  std::vector<std::string> decl_stack_;
   bool post_visit_enum_decl(const Schema&, const NestedNode& decl) {
     fprintf(
         fd_, "%s = " MODULE "Enum(name=\"%s\", enumerants=%s)\n",
@@ -606,14 +620,13 @@ class EnumForwardDecl : public BasePythonGenerator {
 
 };
 
-class CapnpcCaraForwardDecls : public BaseGenerator {
+class CapnpcCaraForwardDecls : public BasePythonGenerator {
  public:
   CapnpcCaraForwardDecls(SchemaLoader &schemaLoader, FILE* fd)
-    : BaseGenerator(schemaLoader), fd_(fd) {
+    : BasePythonGenerator(schemaLoader), fd_(fd) {
   }
  private:
   FILE* fd_;
-  std::vector<std::string> decl_stack_;
 
   template<typename T>
   void outputDecl(std::string&& type, T&& name,
@@ -656,16 +669,6 @@ class CapnpcCaraForwardDecls : public BaseGenerator {
           kj::strArray(importPath, ".").cStr(),
           name.c_str());
     }
-    return false;
-  }
-
-  bool pre_visit_decl(const Schema&, const NestedNode& decl) {
-    decl_stack_.emplace_back(check_keyword(decl.getName()).cStr());
-    return false;
-  }
-
-  bool post_visit_decl(const Schema&, const NestedNode&) {
-    decl_stack_.pop_back();
     return false;
   }
 
@@ -722,7 +725,6 @@ class CapnpcCaraFinishDecls : public BasePythonGenerator {
     : BasePythonGenerator(loader), fd_(fd) {}
  private:
   FILE* fd_;
-  std::vector<std::string> decl_stack_;
 
   bool post_visit_file(const Schema&, const RequestedFile&) override {
     if (stored_annotations_.size() != 0) {
@@ -735,16 +737,6 @@ class CapnpcCaraFinishDecls : public BasePythonGenerator {
 
   void outputLine(kj::StringPtr&& line) {
     fprintf(fd_, "%s\n", line.cStr());
-  }
-
-  bool pre_visit_decl(const Schema&, const NestedNode& decl) {
-    decl_stack_.emplace_back(check_keyword(decl.getName()).cStr());
-    return false;
-  }
-
-  bool post_visit_decl(const Schema&, const NestedNode&) {
-    decl_stack_.pop_back();
-    return false;
   }
 
   bool post_visit_const_decl(const Schema&, const NestedNode&) {
