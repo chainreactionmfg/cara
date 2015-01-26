@@ -60,6 +60,12 @@ class build_generator(build):
         self.run_command('update_submodules')
 
         compiler = ccompiler.new_compiler()
+        if os.getenv('CC'):
+            compiler.set_executable('compiler_cc', os.getenv('CC'))
+            compiler.set_executable('compiler_cxx', (
+                os.getenv('CXX') or os.getenv('CC')))
+            compiler.set_executable('compiler_so', os.getenv('CC'))
+            compiler.set_executable('linker_exe', os.getenv('CC'))
         libs = ['kj', 'capnp', 'capnpc', 'stdc++', 'm']
         for lib in libs:
             compiler.add_library(lib)
