@@ -1,27 +1,10 @@
-from cara import cara
-from cara import cara_pseud
 import tornado
 import tornado.testing
 import pseud
-from pseud._tornado import async_sleep
 
-# from gen import readme_pep8
-# TODO: Put this into an actual capnp file
-FooIface = cara.Interface('FooIface')
-FooIface.FinishDeclaration(methods=[
-    cara.Method(id=0, name='callback',
-                params=[cara.Param(id=0, name='foo', type=FooIface)],
-                results=[])])
-BarIface = cara.Interface('BarIface')
-BazIface = cara.Interface('BazIface')
-BarIface.FinishDeclaration(methods=[
-    cara.Method(id=0, name='return_cb',
-                params=[],
-                results=[cara.Param(id=0, name='cb', type=BazIface)])])
-BazIface.FinishDeclaration(methods=[
-    cara.Method(id=0, name='call',
-                params=[cara.Param(id=0, name='is_called', type=cara.Bool)],
-                results=[])])
+import cara
+from cara import cara_pseud
+from tests.cara_pseud_test_capnp import FooIface, BarIface, BazIface
 
 
 class PseudTest(tornado.testing.AsyncTestCase):
@@ -31,7 +14,6 @@ class PseudTest(tornado.testing.AsyncTestCase):
         self.endpoint = b'ipc://hi'
         self.server = self.create_server()
         yield self.server.start()
-        yield async_sleep(self.io_loop, 0.2)
         self.client = self.create_client()
         yield self.client.start()
 
@@ -82,11 +64,11 @@ class PseudTest(tornado.testing.AsyncTestCase):
         yield self.create_client_server()
         called = False
         @cara_pseud.register_interface(self.server, BarIface)
-        def return_cb():
+        def returnCb():
             def cb(is_called):
                 nonlocal called
                 called = is_called
             return cb
-        cb = yield BarIface(self.client).return_cb()
+        cb = yield BarIface(self.client).returnCb()
         yield cb.call(True)
         assert called
