@@ -1,3 +1,4 @@
 include README.md
 include LICENSE
-include gen/*
+include gen/capnpc-cara.c++
+include gen/README.md

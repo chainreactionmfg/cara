@@ -17,7 +17,13 @@ with open('README.md') as readme:
     readme_lines = readme.readlines()
 
 description = readme_lines[3].strip()
-long_description = ''.join(readme_lines[4:])
+try:
+    import pandoc
+    doc = pandoc.Document()
+    doc.markdown = ''.join(readme_lines)
+    long_description = doc.rst.replace(r'\_\_', '__')
+except ImportError:
+    long_description = ''.join(readme_lines[4:])
 
 
 class cara_build(build):
@@ -38,11 +44,21 @@ class update_submodules(Command):
     initialize_options = finalize_options = lambda self: None
 
     def run(self):
-        self.spawn('git submodule update --init --recursive'.split())
+        capnp_generic_gen = os.path.join('gen', 'capnp_generic_gen')
+        if not os.path.exists(capnp_generic_gen):
+            # Clone capnp_generic_gen if it doesn't exist.
+            self.spawn(
+                ('git clone https://github.com/chainreactionmfg/'
+                 'capnp_generic_gen.git %s' % capnp_generic_gen).split())
+        elif os.path.exists('.git'):
+            # If we're in git, then submodule init/update
+            self.spawn('git submodule update --init'.split())
 
 
 class build_generator(build):
     def run(self):
+        self.run_command('update_submodules')
+
         compiler = ccompiler.new_compiler()
         libs = ['kj', 'capnp', 'capnpc', 'stdc++', 'm']
         for lib in libs:
@@ -151,7 +167,7 @@ setup(
         'tornado',
     ],
     extras_require={
-        'pseud': ['pseud[Tornado]'],
+        'pseud': ['pseud[Tornado]>=0.1.0'],
     },
     tests_require=[
         'pytest',
