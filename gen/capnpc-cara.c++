@@ -637,17 +637,16 @@ class CapnpcCaraForwardDecls : public BasePythonGenerator {
 
   template<typename T>
   void outputDecl(std::string&& type, T&& name,
-                  kj::String templates = kj::str("")) {
-    if (templates.size()) {
+                  const std::vector<std::string>& templates = {}) {
+    if (templates.size() != 0) {
       fprintf(
-          fd_, "%s = " MODULE "Templated(" MODULE "%s, name=\"%s\", templates=%s)\n",
+          fd_, "%s = " MODULE "Templated%s(name=\"%s\", templates=%s)\n",
           kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr(),
-          templates.cStr());
+          to_py_array(templates).cStr());
     } else {
       fprintf(
-          fd_, "%s = " MODULE "%s(name=\"%s\"%s)\n",
-          kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr(),
-          templates.cStr());
+          fd_, "%s = " MODULE "%s(name=\"%s\")\n",
+          kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr());
     }
   }
 
@@ -722,7 +721,7 @@ class CapnpcCaraForwardDecls : public BasePythonGenerator {
     for (auto param : proto.getParameters()) {
       params.emplace_back(kj::str('"', param.getName(), '"').cStr());
     }
-    outputDecl(std::move(type), name, to_py_array(params));
+    outputDecl(std::move(type), name, params);
   }
 };
 
