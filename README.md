@@ -1,4 +1,7 @@
 # CARA
+[![Build Status](https://img.shields.io/travis/chainreactionmfg/cara/master.svg)](https://travis-ci.org/chainreactionmfg/cara)
+[![Coverage Status](https://img.shields.io/coveralls/chainreactionmfg/cara/master.svg)](https://coveralls.io/r/chainreactionmfg/cara)
+[![Codacy Badge](https://img.shields.io/codacy/3cc5a370c923435e92b9ce1a7dbbbafe.svg)](https://www.codacy.com/public/fahhem/cara)
 
 cara is a Cap'n proto Alternative RPC API.
 
