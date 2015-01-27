@@ -139,6 +139,7 @@ class pytest(test):
     def run(self):
         self.run_command('build_generator')
         self.run_command('build_test_capnp')
+        self.run_command('build_included_capnp')
         import pytest
         cov = ''
         if self.pytest_cov is not None:
