@@ -1,7 +1,6 @@
 language: python
 
 cache:
-  pip: true
   apt: true
   directories:
     - capnproto
