@@ -5,16 +5,20 @@ cache:
   apt: true
   directories:
     - capnproto
+    - zeromq4-1-master
 
 
 env:
   - TESTENV=py34 GCC_VER=4.9 CC=gcc-4.9 CXX=g++-4.9
 
-install:
-  - git submodule update --init
+before_install:
   - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
   - sudo apt-get update
   - sudo apt-get install g++-$GCC_VER gcc-$GCC_VER
+  - ./install_zeromq41.sh
+
+install:
+  - git submodule update --init
   - if [[ ! -e capnproto ]]; then git clone --depth=1 --single-branch -b release-0.5.1 https://github.com/kentonv/capnproto.git; fi
   - cd capnproto/c++
   - if [[ ! -e capnp ]]; then autoreconf -i && CC=gcc-$GCC_VER CXX=g++-$GCC_VER ./configure && make -j5 && sudo make install; fi
