@@ -1,0 +1,13 @@
+.coverage
+.pytest-incremental
+.doit.db
+*.pyc
+.lvimrc
+__pycache__
+htmlcov
+*.egg-info
+dodo.py
+.coveralls.yml
+.tox
+build/
+.cache/

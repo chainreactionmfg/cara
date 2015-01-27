@@ -2,3 +2,7 @@ __pycache__
 .doit.db
 DeathHandler
 .ycm_extra_conf.py
+store
+capnpc-cara
+capnpc-cara.o
+dodo_local.py
