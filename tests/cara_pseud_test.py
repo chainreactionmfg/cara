@@ -9,13 +9,11 @@ from tests.cara_pseud_test_capnp import FooIface, BarIface, BazIface
 
 class PseudTest(tornado.testing.AsyncTestCase):
 
-    @tornado.gen.coroutine
     def create_client_server(self):
-        self.endpoint = b'ipc://hi'
+        self.endpoint = b'ipc://pseud-test-ipc'
         self.server = self.create_server()
-        yield self.server.start()
         self.client = self.create_client()
-        yield self.client.start()
+        return [self.server.start(), self.client.start()]
 
     def create_server(self):
         server = pseud.Server(
@@ -33,20 +31,19 @@ class PseudTest(tornado.testing.AsyncTestCase):
     @tornado.testing.gen_test
     def test_simple(self):
         yield self.create_client_server()
-        result = False
 
         @self.server.register_rpc
         def test():
-            nonlocal result
-            result = True
+            self.stop(True)
 
         yield self.client.test()
-        assert result
+        self.assertTrue(self.wait())
 
     @tornado.testing.gen_test
     def test_call_client_cb(self):
         yield self.create_client_server()
         called = False
+
         class Foo(FooIface):
             def callback(self):
                 nonlocal called
@@ -63,6 +60,7 @@ class PseudTest(tornado.testing.AsyncTestCase):
     def test_call_server_cb(self):
         yield self.create_client_server()
         called = False
+
         @cara_pseud.register_interface(self.server, BarIface)
         def returnCb():
             def cb(is_called):
