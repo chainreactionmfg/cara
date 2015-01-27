@@ -150,7 +150,7 @@ class pytest(test):
         if self.pytest_cov is not None:
             outputs = ' '.join('--cov-report %s' % output
                                for output in self.pytest_cov.split(','))
-            cov = ' --no-cov-on-fail --cov cara ' + outputs
+            cov = ' --cov cara ' + outputs
         sys.exit(pytest.main(self.pytest_args + cov))
 
 setup(

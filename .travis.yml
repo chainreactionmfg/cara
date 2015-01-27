@@ -23,8 +23,11 @@ install:
   - cd capnproto/c++
   - if [[ ! -e capnp ]]; then autoreconf -i && CC=gcc-$GCC_VER CXX=g++-$GCC_VER ./configure && make -j5 && sudo make install; fi
   - cd ../../
-  - pip install tox
+  - pip install tox coveralls
   - pip install -e .
 
 script:
   - tox -e $TESTENV
+
+after_success:
+  - coveralls
