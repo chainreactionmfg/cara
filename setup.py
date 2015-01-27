@@ -103,15 +103,18 @@ class build_capnp_files(build):
 
 
 class build_included_capnp(build_capnp_files):
-    def run(self):
+    def run(self, keep_local=False):
         # Find c++.capnp and friends first.
         capnp_dir = self.execute(
             'pkg-config --variable=includedir capnp'.split()).strip()
-        self.mkpath(os.path.join(self.build_lib, 'cara', 'capnp'))
+        if keep_local:
+            target = os.path.join('cara', 'capnp')
+        else:
+            target = os.path.join(self.build_lib, 'cara', 'capnp')
+        self.mkpath(target)
         for filename in glob.glob(capnp_dir + b'/capnp/*.capnp'):
             # Then run capnp compile -ocara filename --src-prefix=dirname
-            self.compile_file(
-                filename, os.path.join(self.build_lib, 'cara', 'capnp'))
+            self.compile_file(filename, target)
 
 
 class build_test_capnp(build_capnp_files):
@@ -139,7 +142,9 @@ class pytest(test):
     def run(self):
         self.run_command('build_generator')
         self.run_command('build_test_capnp')
-        self.run_command('build_included_capnp')
+        build_included = self.distribution.get_command_obj(
+            'build_included_capnp')
+        build_included.run(keep_local=True)
         import pytest
         cov = ''
         if self.pytest_cov is not None:
