@@ -30,4 +30,4 @@ enum BasicEnum {
   second @1;
 }
 
-const value :Int8 = 0;
+const value :Int8 = 0 $GenericStruct(Text).ann("ann");

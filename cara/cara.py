@@ -25,12 +25,6 @@ Enumerant = records.ImmutableRecord(
     'Enumerant', ['name', 'ordinal'], {'annotations': list})
 
 
-def check_keyword(name):
-  if keyword.iskeyword(name):
-    return '%s_' % name
-  return name
-
-
 class BuiltinType(object):
   """A builtin type.
 
@@ -105,7 +99,7 @@ class BaseSingleTypeDeclaration(BaseDeclaration):
 
   def WithTemplates(self, template_map):
     for template, type in template_map:
-      if type == self.type:
+      if template == self.type:
         new_decl = copy.copy(self)
         new_decl.type = type
         return new_decl
