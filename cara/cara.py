@@ -251,11 +251,17 @@ class BaseStruct(dict, metaclass=StructMeta):
     keep = {}
     for k, v in (val or {}).items():
       if not isinstance(k, int):
-        # val's keys are strings, so we're being created, switch to ints
-        field = self._get_field_from_name(k)
-        keep[field.id] = _ConvertToType(field.type, v)
+        # val's keys are strings, but we're being created, switch to ints
+        if k.isdigit():
+          # It was just the ID as a string, switch back to that.
+          k = int(k)
+          field = self._get_field_from_id(k)
+        else:
+          field = self._get_field_from_name(k)
+          k = field.id
       else:
-        keep[k] = _ConvertToType(self._get_field_from_id(k).type, v)
+        field = self._get_field_from_id(k)
+      keep[k] = _ConvertToType(field.type, v)
     # the internal dict is a mapping of integer id's to values
     super().__init__(keep)
 
