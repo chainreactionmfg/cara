@@ -13,6 +13,7 @@ struct GenericStruct (T) {
   }
   struct Nongeneric {
     templated @0 :T;
+    doubleTemplated @1 :GenericStruct(Text);
   }
 }
 

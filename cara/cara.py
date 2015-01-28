@@ -158,12 +158,7 @@ def NestedCatchingModifier(cls):
         or (attr.startswith('__') and attr.endswith('__'))
         or attr in dir(cls)):
       return prev_setattr(cls, attr, val)
-    # if (isinstance(val, (
-    #     StructMeta, InterfaceMeta, BaseDeclaration, BaseTemplated))
-    #     or issubclass(val, enum.Enum)):
     cls.__nested__[attr] = val
-    return
-    # raise ValueError('Cannot set %s to %s' % (attr, val))
   cls.__setattr__ = __setattr__
 
   def __getattr__(cls, attr):
@@ -268,8 +263,8 @@ class BaseStruct(dict, metaclass=StructMeta):
     if attr in type(self).__fields__:
       field = type(self)._get_field_from_name(attr)
       self[field.id] = _ConvertToType(field.type, val)
-    elif attr in type(self).__slots__:
-      super().__setattr__(attr, val)
+    else:
+      raise AttributeError('Cannot set %s to %s on %s' % (attr, val, self))
 
   def __getattr__(self, attr):
     return self[attr]
@@ -358,7 +353,7 @@ class BaseList(list):
 
     Only works for lists of Struct type.
     """
-    if not isinstance(self.sub_type, BaseStruct):
+    if not issubclass(self.sub_type, BaseStruct):
       raise TypeError('Cannot use Get on a List of non-Struct types.')
     return next(val for val in self
                 if all(val[attr] == kwargs[attr] for attr in kwargs.keys()))
@@ -380,7 +375,7 @@ def List(sub_type):
     name = sub_type.__name__
 
   new_type = type(
-      'List<%s>' % name, (BaseList,), {'sub_type': sub_type})
+      'List[%s]' % name, (BaseList,), {'sub_type': sub_type})
   __list_cache__[sub_type] = new_type
   return new_type
 
@@ -471,12 +466,10 @@ class BaseInterface(metaclass=InterfaceMeta):
 
     if isinstance(method, TemplatedMethod):
       def _Wrapper(*templates):
-        template_map = [(MethodTemplate(i), template)
-                        for i, template in enumerate(templates)]
-        new_method = method.WithTemplates(template_map)
-        return self._WrapMethod(key, new_method)
+        return self._WrapMethod(key, method[templates])
       return generics.GetItemWrapper(_Wrapper)
-    return self._WrapMethod(key, method)
+    else:
+      return self._WrapMethod(key, method)
 
   def _WrapMethod(self, key, method):
     # Allow wrapping an object.
@@ -650,7 +643,7 @@ class BaseTemplated(BaseDeclaration):
         if isinstance(type, generics.Template):
             return str(type.cls)
         return type.name if hasattr(type, 'name') else str(type)
-    new_decl = type(self).base_type(name='%s<%s>' % (
+    new_decl = type(self).base_type(name='%s[%s]' % (
         self.name, ', '.join(get_name(type) for _, type in local_tpl_map)))
     new_decl.__nested__ = type('Nested classes are not available yet.', (), {})
     # Put it in the cache early so we can avoid any recursion problems from the

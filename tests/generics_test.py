@@ -38,5 +38,8 @@ class GenericsTest(unittest.TestCase):
         inputs = []
         iface({'normal': lambda a: inputs.append(a)}).normal(1)
         assert inputs[-1] == 1
-        iface({'templated': lambda a: inputs.append(a)}).templated[cara.Text](2)
-        assert inputs[-1] == 2
+        instance = iface({'templated': lambda a: inputs.append(a)})
+        assert isinstance(
+            instance.__methods__['templated'], cara.TemplatedMethod)
+        instance.templated[cara.Text]("text")
+        assert inputs[-1] == "text"

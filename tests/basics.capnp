@@ -9,5 +9,7 @@ using TwoParty = import "/capnp/rpc-twoparty.capnp";
 struct Basic {
   field @0 :Int32;
   type @1 :Schema.Type;
+  list @2 :List(Basic);
+  ints @3 :List(Int32);
 }
 
