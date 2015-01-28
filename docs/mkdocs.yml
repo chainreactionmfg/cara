@@ -1,0 +1,8 @@
+site_name: Cara
+pages:
+  - [index.md, Home]
+  - [differentiations.md, Differentiations]
+  - [structs.md, Structs]
+  - [interfaces.md, Interfaces]
+  - [remote.md, Interfaces on the Wire]
+theme: readthedocs
