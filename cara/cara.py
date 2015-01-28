@@ -7,6 +7,7 @@ import sys
 from crmfg_utils import records
 from . import list_cache
 from . import generics
+from .generics import MethodTemplate  # noqa
 
 MARKER = records.ImmutableRecord('ObjectMarker', ['name'])
 AnnotationValue = records.ImmutableRecord(
