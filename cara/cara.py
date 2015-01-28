@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
-import concurrent.futures
 import copy
 import enum
-import functools
 import inspect
-import keyword
 import sys
 
 from crmfg_utils import records
 from . import list_cache
 from . import generics
-from .generics import MethodTemplate
-
-import tornado.concurrent
 
 MARKER = records.ImmutableRecord('ObjectMarker', ['name'])
 AnnotationValue = records.ImmutableRecord(
@@ -52,32 +46,31 @@ for name, checker in BUILTIN_TYPES.items():
   setattr(mod, name, type(name, (BuiltinType,), {'checker': checker}))
 
 
+# Registry of functions that take the intended type and a value that should be
+# converted to that type.
+__type_conversion_registry__ = {}
+
+
 def _ConvertToType(type, value):
   """Convert a value to a field (or param's) type.
 
+  Sometimes the value is not converted directly, this can be controlled by the
+  __type_conversion_registry__. If the given value is an instance of a type in
+  that registry (or a subclass of a type), then conversion will be delegated to
+  the function registered with it.
+
   Args:
     type: type to convert to.
-    value: value to convert. Can be a Future, in which case we'll chain the
-          future into one that returns the converted type.
+    value: value to convert.
 
   Returns:
-    Returns either the converted value or a future that will return the
-    converted value.
+    Either the converted value or whatever a registered function returns.
   """
-  # XXX: tight-coupling point with pseud (futures)
-  if not isinstance(value, (
-      tornado.concurrent.Future, concurrent.futures.Future)):
+  if not isinstance(value, tuple(__type_conversion_registry__.keys())):
     return type(value)
-
-  new_future = tornado.concurrent.Future()
-
-  def _Done(fut):
-      new_future.set_result(_ConvertToType(type, fut.result()))
-
-  value.add_done_callback(_Done)
-  # For exceptions only:
-  tornado.concurrent.chain_future(value, new_future)
-  return new_future
+  for base_type, func in __type_conversion_registry__.items():
+    if isinstance(value, base_type):
+      return func(type, value)
 
 
 class BaseDeclaration(records.ImmutableRecord(
@@ -428,11 +421,21 @@ class InterfaceMeta(DeclarationMeta):
     # Lastly, only allow __new__ to be overridden on the declaration class.
     cls.__new__ = cls.NewWrapper
 
-RemoteInterfaceDescriptor = records.ImmutableRecord(
-    'RemoteInterfaceDescriptor', ['remote_id', 'client'])
-
 
 class BaseInterface(metaclass=InterfaceMeta):
+  __remote_type_registry__ = {}
+
+  @classmethod
+  def register_remote_type(cls, remote_type, local_type):
+    """Register a type to be considered as a remote type.
+
+    Args:
+        remote_type: A type that a backend creates to indicate a remote
+          interface.
+        local_type: A type (or function) that takes the interface and an
+          instance of remote_type.
+    """
+    cls.__remote_type_registry__[remote_type] = local_type
 
   def NewWrapper(cls, value):
     """Potentially creates an instance of cls.
@@ -452,10 +455,11 @@ class BaseInterface(metaclass=InterfaceMeta):
     """
     if isinstance(value, cls):
       return value
-    if isinstance(value, RemoteInterfaceDescriptor):
-      # value came over the wire, so allow us to send method calls back.
-      return RemoteInterface(
-          value.remote_id, value.client, cls.__methods__, cls.__id_methods__)
+    if isinstance(value, tuple(cls.__remote_type_registry__.keys())):
+      # value came over the wire, so allow backends to send method calls back.
+      for remote_type, local_type in cls.__remote_type_registry__.items():
+        if isinstance(value, remote_type):
+          return local_type(cls, value)
     result = super().__new__(cls)
     result.__wrapped__ = value
     if len(cls.__methods__) > 1 and inspect.isfunction(value):
@@ -560,24 +564,6 @@ class BaseInterface(metaclass=InterfaceMeta):
         return '%s(%s)' % (type(self).__name__, self.__wrapped__)
     return '%s' % (type(self).__name__)
   __repr__ = __str__
-
-
-class RemoteInterface(records.ImmutableRecord(
-        'RemoteInterface', ['remote_id', 'client', 'methods', 'id_methods'])):
-
-  def __getattr__(self, attr):
-      if isinstance(attr, int):
-          attr = self.id_methods[attr]
-      method = self.methods.get(attr)
-      if method is None:
-          raise AttributeError('%s has no attribute %s' % (self, attr))
-          super().__getattr__(attr)
-
-      def ProxyMethod(*args, **kwargs):
-          # XXX: tight-coupling point with pseud (client.registered)
-          return self.client.registered(self.remote_id, method.id, args, kwargs)
-      return BaseInterface._MethodWrapper(ProxyMethod, method)
-  __getitem__ = __getattr__
 
 
 @NestedCatchingModifier

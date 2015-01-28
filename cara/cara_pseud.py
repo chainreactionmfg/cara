@@ -1,9 +1,14 @@
+import concurrent.futures
 import inspect
 
 from cara import cara
 from crmfg_utils import records
 
 import msgpack
+import tornado.concurrent
+
+RemoteInterfaceDescriptor = records.ImmutableRecord(
+    'RemoteInterfaceDescriptor', ['remote_id', 'client'])
 
 
 class RemoteInterfaceServer(records.Record('Wrapper', [], {'objs': dict})):
@@ -15,7 +20,31 @@ class RemoteInterfaceServer(records.Record('Wrapper', [], {'objs': dict})):
     self.objs[local_id] = obj
 
 
+class RemoteInterfaceClient(records.ImmutableRecord(
+        'RemoteInterface', ['remote_id', 'client', 'methods', 'id_methods'])):
+
+  @classmethod
+  def FromDescriptor(cls, interface, descriptor):
+    return cls(
+        descriptor.remote_id, descriptor.client,
+        interface.__methods__, interface.__id_methods__)
+
+  def __getattr__(self, attr):
+      if isinstance(attr, int):
+          attr = self.id_methods[attr]
+      method = self.methods.get(attr)
+      if method is None:
+          raise AttributeError('%s has no attribute %s' % (self, attr))
+          super().__getattr__(attr)
+
+      def ProxyMethod(*args, **kwargs):
+          return self.client.registered(self.remote_id, method.id, args, kwargs)
+      return cara.BaseInterface._MethodWrapper(ProxyMethod, method)
+  __getitem__ = __getattr__
+
+
 def setup_server(server):
+    _RegisterPseudBackend()
     # Register Interface with the server
     handler = RemoteInterfaceServer()
 
@@ -29,14 +58,13 @@ def setup_server(server):
         # weird stuff. Won't be in the final code.
         if isinstance(msgpack.unpackb(val), int):
             remote_id = msgpack.unpackb(val)
-            return cara.RemoteInterfaceDescriptor(remote_id, None)
+            return RemoteInterfaceDescriptor(remote_id, None)
         remote_id, user_id = msgpack.unpackb(val)
-        return cara.RemoteInterfaceDescriptor(
-            remote_id, server.send_to(user_id))
+        return RemoteInterfaceDescriptor(remote_id, server.send_to(user_id))
     # TODO: fix this, it should be 4 functions, I think
     server_table = {
         100: (cara.BaseInterface, iface_to_mp, mp_to_remote_iface),
-        101: (cara.RemoteInterface, iface_to_mp, mp_to_remote_iface)}
+        101: (RemoteInterfaceClient, iface_to_mp, mp_to_remote_iface)}
 
     server.packer.translation_table = server_table
     server.register_rpc(handler.registered, 'registered')
@@ -44,6 +72,7 @@ def setup_server(server):
 
 
 def setup_client(client):
+    _RegisterPseudBackend()
     handler = RemoteInterfaceServer()
 
     def iface_to_mp(val):
@@ -52,14 +81,40 @@ def setup_client(client):
 
     def mp_to_remote_iface(val):
         remote_id = msgpack.unpackb(val)
-        return cara.RemoteInterfaceDescriptor(remote_id, client)
+        return RemoteInterfaceDescriptor(remote_id, client)
     client_table = {
         100: (cara.BaseInterface, iface_to_mp, mp_to_remote_iface),
-        101: (cara.RemoteInterface, iface_to_mp, mp_to_remote_iface)
+        101: (RemoteInterfaceClient, iface_to_mp, mp_to_remote_iface)
     }
     client.packer.translation_table = client_table
     client.register_rpc(handler.registered, 'registered')
     return client
+
+
+def _RegisterPseudBackend():
+  def ConvertFutureCorrectly(type, future):
+    """Converts a future's result into the given type.
+
+    Instead of converting the future into the given type directly, we create a
+    chained future that converts the type later.
+    """
+    new_future = tornado.concurrent.Future()
+
+    def _Done(fut):
+        new_future.set_result(cara._ConvertToType(type, fut.result()))
+
+    future.add_done_callback(_Done)
+    # For exceptions only:
+    tornado.concurrent.chain_future(future, new_future)
+    return new_future
+  # First register the future conversions of method calls.
+  registry = cara.__type_conversion_registry__
+  registry[tornado.concurrent.Future] = ConvertFutureCorrectly
+  registry[concurrent.futures.Future] = ConvertFutureCorrectly
+  # Next register the remote descriptor handler for when those method calls
+  # return a remote interface.
+  cara.BaseInterface.register_remote_type(
+      RemoteInterfaceDescriptor, RemoteInterfaceClient.FromDescriptor)
 
 
 def _find_interface(cls, interface):
