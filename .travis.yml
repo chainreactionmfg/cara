@@ -17,13 +17,10 @@ before_install:
   - sudo apt-get update
   - sudo apt-get install $CXX $CC
   - ./install_zeromq41.sh
+  - ./install_capnp051.sh
 
 install:
   - git submodule update --init
-  - if [[ ! -e capnproto ]]; then git clone --depth=1 --single-branch -b release-0.5.1 https://github.com/kentonv/capnproto.git; fi
-  - cd capnproto/c++
-  - if [[ ! -e capnp ]]; then autoreconf -i && ./configure && make -j5 && sudo make install; fi
-  - cd ../../
   - pip install tox coveralls
   - pip install -e .
 
