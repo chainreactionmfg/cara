@@ -2,3 +2,8 @@ include README.md
 include LICENSE
 include gen/capnpc-cara.c++
 include gen/README.md
+include gen/.ycm_extra_conf.py
+include gen/dodo.py
+include docs/*.md
+include docs/mkdocs.yml
+include cara/capnp/generate.sh

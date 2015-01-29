@@ -7,7 +7,8 @@
 [![PyPI License](https://img.shields.io/pypi/l/cara.svg)](https://pypi.python.org/pypi/cara)
 
 <!--- Short Description --->
-cara is a Cap'n proto Alternative RPC API. [Read the docs!](http://cara.readthedocs.org/en/latest/)
+cara is a Cap'n proto Alternative RPC API.
+[Read the docs!](http://cara.readthedocs.org/en/latest/)
 
 ## Reason for creation
 

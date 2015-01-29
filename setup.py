@@ -11,15 +11,26 @@ from setuptools.command.test import test
 
 MAJOR = 0
 MINOR = 5
-MICRO = 0
+MICRO = 3
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 
 with open('README.md') as readme:
     readme_lines = readme.readlines()
 
-for i, line in enumerate(readme_lines):
+in_comment_block = False
+for i in range(len(readme_lines)):
+    line = readme_lines[i]
+    # Get the short description based on the comment.
     if 'Short Description' in line:
         description = readme_lines[i + 1].strip()
+    # Also, remove all comments.
+    if '<!---' in line or in_comment_block:
+        if '--->' not in line:
+            in_comment_block = True
+        else:
+            in_comment_block = False
+        readme_lines[i] = ''
+
 try:
     import pandoc
     doc = pandoc.Document()
