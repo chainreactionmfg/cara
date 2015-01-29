@@ -11,7 +11,7 @@ from setuptools.command.test import test
 
 MAJOR = 0
 MINOR = 5
-MICRO = 3
+MICRO = 4
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 
 with open('README.md') as readme:
@@ -186,7 +186,7 @@ setup(
     license='Apache 2.0',
     author='Fahrzin Hemmati',
     author_email='fahhem@gmail.com',
-    url='https://github.com/crmfg/cara',
+    url='https://github.com/chainreactionmfg/cara',
     cmdclass={
         'build': cara_build,
         'build_generator': build_generator,
