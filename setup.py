@@ -17,14 +17,16 @@ VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 with open('README.md') as readme:
     readme_lines = readme.readlines()
 
-description = readme_lines[3].strip()
+for i, line in enumerate(readme_lines):
+    if 'Short Description' in line:
+        description = readme_lines[i + 1].strip()
 try:
     import pandoc
     doc = pandoc.Document()
     doc.markdown = ''.join(readme_lines)
     long_description = doc.rst.replace(r'\_\_', '__')
 except ImportError:
-    long_description = ''.join(readme_lines[4:])
+    long_description = ''.join(readme_lines)
 
 
 def build_cara(command_cls):
