@@ -6,6 +6,7 @@ import sys
 from distutils import ccompiler
 from distutils.command.build import build
 from setuptools import setup, Command
+from setuptools.command.develop import develop
 from setuptools.command.test import test
 
 MAJOR = 0
@@ -26,12 +27,22 @@ except ImportError:
     long_description = ''.join(readme_lines[4:])
 
 
+def build_cara(command_cls):
+    # Have to build the .capnp files into .py files before the packages are
+    # checked, otherwise these would be sub_commands.
+    command_cls.run_command('build_generator')
+    command_cls.run_command('build_included_capnp')
+
+
 class cara_build(build):
     def run(self):
-        # Have to build the .capnp files into .py files before the packages are
-        # checked, otherwise these would be sub_commands.
-        self.run_command('build_generator')
-        self.run_command('build_included_capnp')
+        build_cara(self)
+        super().run()
+
+
+class cara_develop(develop):
+    def run(self):
+        build_cara(self)
         super().run()
 
 
@@ -168,6 +179,7 @@ setup(
         'build_generator': build_generator,
         'build_included_capnp': build_included_capnp,
         'build_test_capnp': build_test_capnp,
+        'develop': cara_develop,
         'update_submodules': update_submodules,
         'test': pytest,
     },
