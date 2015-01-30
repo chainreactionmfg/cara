@@ -117,15 +117,6 @@ def _RegisterPseudBackend():
       RemoteInterfaceDescriptor, RemoteInterfaceClient.FromDescriptor)
 
 
-def _find_interface(cls, interface):
-    if interface is not None:
-        return interface
-    for base in cls.mro():
-        if issubclass(base, cara.BaseInterface):
-            return base
-    raise TypeError('No interface inferable from %s', cls)
-
-
 def register_interface(server, interface=None, obj_or_cls=None):
     """Registers an object with the given server (or client).
 
@@ -162,7 +153,7 @@ def register_interface(server, interface=None, obj_or_cls=None):
         nonlocal interface
         if inspect.isclass(obj_or_cls):
             obj = obj_or_cls()
-            interface = _find_interface(obj_or_cls, interface)
+            interface = cara._find_interface_base_class(obj_or_cls, interface)
         elif inspect.isfunction(obj_or_cls):
             if interface is None:
                 raise TypeError('Interface must be specified for registering a '
@@ -174,7 +165,7 @@ def register_interface(server, interface=None, obj_or_cls=None):
             obj = interface(obj_or_cls)
         else:
             # Should be an instance of a class.
-            interface = _find_interface(obj_or_cls.__class__, interface)
+            interface = cara._find_interface_base_class(obj_or_cls.__class__, interface)
             obj = interface(obj_or_cls)
 
         for name, method in interface.__methods__.items():

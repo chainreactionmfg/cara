@@ -385,6 +385,16 @@ def Interface(name):
   return InterfaceMeta(name, (BaseInterface,), {})
 
 
+def _find_interface_base_class(cls, interface=None):
+    if interface is not None:
+        return interface
+    interfaces = set(BaseInterface.__subclasses__())
+    for base in cls.mro():
+        if base in interfaces:
+            return base
+    raise TypeError('No interface inferable from %s', cls)
+
+
 # Interface is either a LocalInterface or a RemoteInterface, depending on how
 # it was constructed (from python = Local, deserialized = Remote)
 @NestedCatchingModifier
@@ -464,23 +474,36 @@ class BaseInterface(metaclass=InterfaceMeta):
     Here are the situations __new__ would be called:
         * By the framework when converting arguments to a method or elements of
             a struct.
-            * Either with a BaseInterface subclass instance:
-                struct.attr = Foo()  # FooInterface(Foo()) called
-                Foo().method(Foo())  # FooInterface(Foo()) called
-            * or with a class or function to be converted/wrapped:
+            * With a BaseInterface subclass instance:  (Case 1)
+                This can't just return the pased in Foo() because Python will
+                call __init__ on the already-initialized Foo instance. Instead,
+                we still have to wrap it.
+                struct.attr = Foo()  # FooInterface(Foo()) -> wrapped
+                Foo().method(Foo())  # FooInterface(Foo()) -> wrapped
+            * With a class or function to be converted/wrapped:  (Case 2)
                 struct.attr = OtherFoo()  # FooInterface(OtherFoo()) -> wrapped
                 struct.attr = lambda: ... # FooInterface(function) -> wrapped
+            * With an instance of this Interface: (Case 3)
+                Since we have no __init__, it's safe to call it multiple times,
+                so we can just return an already-initialized version of
+                this class.
+                _ConvertToType(FooInterface, FooInterface())
+                # FooInterface(FooInterface()) -> original instance
             We're __new__ in both cases.
         * By the user on a subclass, which we should ignore. So we're not
             __new__ here.
     """
-    if isinstance(value, cls):
-      return value
     if isinstance(value, tuple(cls.__remote_type_registry__.keys())):
       # value came over the wire, so allow backends to send method calls back.
       for remote_type, local_type in cls.__remote_type_registry__.items():
         if isinstance(value, remote_type):
           return local_type(cls, value)
+    # Case 3
+    if isinstance(value, cls):
+        base_interface = _find_interface_base_class(type(value))
+        if base_interface is type(value):
+            return value
+    # Case 1 & 2
     result = super().__new__(cls)
     result.__wrapped__ = value
     if len(cls.__methods__) > 1 and inspect.isfunction(value):
@@ -582,8 +605,8 @@ class BaseInterface(metaclass=InterfaceMeta):
 
   def __str__(self):
     if hasattr(self, '__wrapped__'):
-        return '%s(%s)' % (type(self).__name__, self.__wrapped__)
-    return '%s' % (type(self).__name__)
+        return '%s(%s)' % (type(self).__qualname__, self.__wrapped__)
+    return '%s()' % (type(self).__qualname__)
   __repr__ = __str__
 
 
