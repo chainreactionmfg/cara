@@ -11,7 +11,7 @@ from setuptools.command.test import test
 
 MAJOR = 0
 MINOR = 5
-MICRO = 4
+MICRO = 6
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 
 with open('README.md') as readme:
@@ -153,6 +153,7 @@ class pytest(test):
         ('pytest-cov=', None, "Enable coverage. Choose output type: "
          "term, html, xml, annotate, or multiple with comma separation"),
     ]
+
     def initialize_options(self):
         super().initialize_options()
         self.pytest_args = 'tests'
