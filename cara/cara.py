@@ -186,16 +186,17 @@ class StructMeta(DeclarationMeta):
   def WithTemplates(cls, template_map):
     """We're not templated, but a field or nested type might me."""
     kwargs = {
-        'fields': cls.__id_fields__,
+        'fields': cls.__fields__.values(),
         'annotations': cls.__annotations__
     }
     cls.ApplyTemplatesToKwargs(kwargs, template_map)
+    new_decl = Struct(cls.__name__)
+    new_decl.ApplyTemplatesToNested(cls.__nested__, template_map)
     if (kwargs['fields'] != cls.__id_fields__
-            or kwargs['annotations'] != cls.__annotations__):
-        # Something changed, so make a new struct and return that.
-        new_decl = Struct(cls.__name__)
+            or kwargs['annotations'] != cls.__annotations__
+            or new_decl.__nested__ != cls.__nested__):
+        # Something changed, so return a new struct declaration.
         new_decl.FinishDeclaration(**kwargs)
-        new_decl.ApplyTemplatesToNested(cls.__nested__, template_map)
         return new_decl
     return cls
 
@@ -410,15 +411,34 @@ class InterfaceMeta(DeclarationMeta):
         methods[i] = method
     kwargs['methods'] = methods
 
+  def WithTemplates(cls, template_map):
+    kwargs = {
+        'methods': cls.__methods__.values(),
+        'superclasses': cls.__superclasses__,
+        'annotations': cls.__annotations__,
+    }
+    cls.ApplyTemplatesToKwargs(kwargs, template_map)
+    new_decl = Interface(cls.__name__)
+    new_decl.ApplyTemplatesToNested(cls.__nested__, template_map)
+    if (kwargs['methods'] != cls.__id_methods__
+            or kwargs['superclasses'] != cls.__superclasses__
+            or kwargs['annotations'] != cls.__annotations__
+            or new_decl.__nested__ != cls.__nested__):
+        # Something changed, so return a new interface declaration.
+        new_decl.FinishDeclaration(**kwargs)
+        return new_decl
+    return cls
+
   def FinishDeclaration(cls, methods=None, superclasses=None, annotations=None):
     """Put all Method instances into __methods__."""
-    cls.__bases__ += tuple(superclasses or ())
+    cls.__superclasses__ = tuple(superclasses or ())
+    cls.__bases__ += cls.__superclasses__
     cls.__annotations__ = annotations or []
     cls_methods = cls.__methods__ = {}
     id_methods = cls.__id_methods__ = {}
     for method in methods or []:
       cls_methods[method.name] = method
-      id_methods[method.id] = method.name
+      id_methods[method.id] = method
     # Lastly, only allow __new__ to be overridden on the declaration class.
     cls.__new__ = cls.NewWrapper
 
@@ -470,7 +490,7 @@ class BaseInterface(metaclass=InterfaceMeta):
 
   def __getitem__(self, key):
     if isinstance(key, int):
-      key = self.__id_methods__[key]
+      key = self.__id_methods__[key].name
     method = self.__methods__.get(key)
     if not method:
       raise KeyError(key)
