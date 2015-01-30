@@ -13,4 +13,3 @@ repo_name: 'GitHub'
 site_description: "cara is a Cap'n Alternative RPC API"
 site_author: "Fahrzin Hemmati, Chain Reaction Mfg"
 copyright: "2015, Fahrzin Hemmati, Chain Reaction Mfg"
-markdown_extensions: [smartypants]
