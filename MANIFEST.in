@@ -7,3 +7,5 @@ include gen/dodo.py
 include docs/*.md
 include docs/mkdocs.yml
 include cara/capnp/generate.sh
+include tests/*.py
+include tests/*.capnp
