@@ -83,6 +83,17 @@ class build_generator(build):
     def run(self):
         self.run_command('update_submodules')
 
+        # Check if it needs to be compiled or not.
+        output_bin = os.path.join('gen', 'capnpc-cara')
+        if os.path.exists(output_bin):
+            output_mtime = os.stat(output_bin).st_mtime
+            inputs = [
+                os.path.join('gen', 'capnpc-cara.c++'),
+            ]
+            input_mtimes = [os.stat(filename).st_mtime for filename in inputs]
+            if all(input_mtime <= output_mtime for input_mtime in input_mtimes):
+                return
+
         compiler = ccompiler.new_compiler()
         if os.getenv('CC'):
             compiler.set_executable('compiler_cc', os.getenv('CC'))
@@ -93,7 +104,7 @@ class build_generator(build):
         libs = ['kj', 'capnp', 'capnpc', 'stdc++', 'm']
         for lib in libs:
             compiler.add_library(lib)
-        compiler.add_include_dir('gen/capnp_generic_gen')
+        compiler.add_include_dir(os.path.join('gen', 'capnp_generic_gen'))
         extra_args = '-std=c++14 -fpermissive -Wall'.split()
         # Optionally, install DeathHandler if you want segfault info.
         if os.path.exists('DeathHandler'):
@@ -106,7 +117,7 @@ class build_generator(build):
         # trust us that it can handle .c++.
         compiler.src_extensions = list(compiler.src_extensions) + ['.c++']
         objects = compiler.compile(
-            ['gen/capnpc-cara.c++'], extra_postargs=extra_args)
+            [os.path.join('gen', 'capnpc-cara.c++')], extra_postargs=extra_args)
         [compiler.add_link_object(obj) for obj in objects]
         compiler.link_executable(
             [], 'capnpc-cara', output_dir='gen',
