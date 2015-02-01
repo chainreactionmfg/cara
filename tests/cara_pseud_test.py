@@ -42,31 +42,27 @@ class PseudTest(tornado.testing.AsyncTestCase):
     @tornado.testing.gen_test
     def test_call_client_cb(self):
         yield self.create_client_server()
-        called = False
 
         class Foo(FooIface):
-            def callback(self):
-                nonlocal called
-                called = True
+            def callback(foo_self):
+                self.stop(True)
 
         @cara_pseud.register_interface(self.server, FooIface)
         def calls_cb(foo):
             foo.callback()
 
         yield self.client.callback(Foo())
-        assert called
+        assert self.wait()
 
     @tornado.testing.gen_test
     def test_call_server_cb(self):
         yield self.create_client_server()
-        called = False
 
         @cara_pseud.register_interface(self.server, BarIface)
         def returnCb():
             def cb(is_called):
-                nonlocal called
-                called = is_called
+                self.stop(is_called)
             return cb
         cb = yield BarIface(self.client).returnCb()
         yield cb.call(True)
-        assert called
+        assert self.wait()
