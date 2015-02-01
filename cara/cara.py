@@ -5,8 +5,9 @@ import inspect
 import sys
 
 from crmfg_utils import records
-from . import list_cache
 from . import generics
+from . import list_cache
+from . import type_registry
 from .generics import MethodTemplate  # noqa
 
 MARKER = records.ImmutableRecord('ObjectMarker', ['name'])
@@ -47,9 +48,10 @@ for name, checker in BUILTIN_TYPES.items():
   setattr(mod, name, type(name, (BuiltinType,), {'checker': checker}))
 
 
-# Registry of functions that take the intended type and a value that should be
-# converted to that type.
-__type_conversion_registry__ = {}
+# Registry of base types and functions that take the target type and a value
+# that should be converted to that type. The value will be an instance of the
+# base type key.
+type_conversion_registry = type_registry.TypeRegistry()
 
 
 def _ConvertToType(type, value):
@@ -67,11 +69,9 @@ def _ConvertToType(type, value):
   Returns:
     Either the converted value or whatever a registered function returns.
   """
-  if not isinstance(value, tuple(__type_conversion_registry__.keys())):
-    return type(value)
-  for base_type, func in __type_conversion_registry__.items():
-    if isinstance(value, base_type):
-      return func(type, value)
+  if type_conversion_registry.IsInstanceOfAny(value):
+    return type_conversion_registry.LookUp(value)(type, value)
+  return type(value)
 
 
 class BaseDeclaration(records.ImmutableRecord(
@@ -454,19 +454,7 @@ class InterfaceMeta(DeclarationMeta):
 
 
 class BaseInterface(metaclass=InterfaceMeta):
-  __remote_type_registry__ = {}
-
-  @classmethod
-  def register_remote_type(cls, remote_type, local_type):
-    """Register a type to be considered as a remote type.
-
-    Args:
-        remote_type: A type that a backend creates to indicate a remote
-          interface.
-        local_type: A type (or function) that takes the interface and an
-          instance of remote_type.
-    """
-    cls.__remote_type_registry__[remote_type] = local_type
+  remote_type_registry = type_registry.TypeRegistry()
 
   def NewWrapper(cls, value):
     """Potentially creates an instance of cls.
@@ -493,11 +481,9 @@ class BaseInterface(metaclass=InterfaceMeta):
         * By the user on a subclass, which we should ignore. So we're not
             __new__ here.
     """
-    if isinstance(value, tuple(cls.__remote_type_registry__.keys())):
+    if cls.remote_type_registry.IsInstanceOfAny(value):
       # value came over the wire, so allow backends to send method calls back.
-      for remote_type, local_type in cls.__remote_type_registry__.items():
-        if isinstance(value, remote_type):
-          return local_type(cls, value)
+      cls.remote_type_registry.LookUp(value)(cls, value)
     # Case 3
     if isinstance(value, cls):
         base_interface = _find_interface_base_class(type(value))
