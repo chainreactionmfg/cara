@@ -16,4 +16,5 @@ struct Basic {
 interface SimpleInterface {
   structOut @0 (input :Int32) -> Basic;
   structIn @1 Basic -> (output :Int32);
+  multipleOut @2 () -> (one :Int32, two :Int32);
 }

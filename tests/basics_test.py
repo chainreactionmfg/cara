@@ -23,11 +23,31 @@ class BasicsTest(unittest.TestCase):
         iface = SimpleInterface({
             'structOut': lambda i: Basic.Create(field=i),
             'structIn': lambda struct: struct.field,
+            'multipleOut': lambda: {'one': 1, 'two': 2},
         })
         assert iface.structOut(1).field == 1
         assert iface.structIn(Basic.Create(field=2)) == 2
+        assert iface.multipleOut()['one'] == 1
+        assert iface.multipleOut()['two'] == 2
 
+        iface = SimpleInterface({
+            'structOut': lambda input: {'field': input},
+            'structIn': lambda struct: {'output': struct.field},
+            'multipleOut': lambda: [1, 2],
+        })
+        assert iface.structOut(input=3).field == 3
+        assert iface.structIn({'field': 3}) == 3
+        assert iface.multipleOut()['one'] == 1
+
+    def test_inheritance(self):
         class Inherited(SimpleInterface):
           def structIn(self, struct):
             return struct.field
-        assert Inherited().structIn(Basic.Create(field=3)) == 3
+        instance = Inherited()
+        assert instance.structIn(Basic.Create(field=3)) == 3
+        assert instance.structIn(field=3) == 3
+
+        wrapped = SimpleInterface(instance)
+        assert type(wrapped) == SimpleInterface
+        assert type(SimpleInterface(wrapped)) == SimpleInterface
+        assert SimpleInterface(wrapped) is wrapped

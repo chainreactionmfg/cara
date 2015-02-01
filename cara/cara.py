@@ -544,14 +544,26 @@ class BaseInterface(metaclass=InterfaceMeta):
                 name, method.name))
           return param
       # Convert input params to proper types first.
-      args = [_ConvertToType(param.type, arg)
-              for param, arg in zip(method.params, args)]
-      kwargs = {
-          name: _ConvertToType(_GetParam(name, method.params).type, arg)
-          for name, arg in kwargs.items()}
+      if isinstance(method.params, list):
+        args = [_ConvertToType(param.type, arg)
+                for param, arg in zip(method.params, args)]
+        kwargs = {
+            name: _ConvertToType(_GetParam(name, method.params).type, arg)
+            for name, arg in kwargs.items()}
+      else:
+        # Only one input param, so force it to be
+        if args:
+          args = (_ConvertToType(method.params, args[0]),)
+        elif kwargs:
+          # kwargs doesn't make sense since the parameter doesn't have a name,
+          # unless the kwargs are actually for the input parameter.
+          args = (_ConvertToType(method.params, kwargs),)
+          kwargs = {}
       result = func(*args, **kwargs)
 
       # Convert result to proper types now.
+      if not isinstance(method.results, list):
+        return _ConvertToType(method.results, result)
       if len(method.results) == 0:
         return result
       if len(method.results) == 1:
