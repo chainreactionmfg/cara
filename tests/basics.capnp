@@ -13,3 +13,7 @@ struct Basic {
   ints @3 :List(Int32);
 }
 
+interface SimpleInterface {
+  structOut @0 (input :Int32) -> Basic;
+  structIn @1 Basic -> (output :Int32);
+}
