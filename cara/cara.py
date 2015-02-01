@@ -91,7 +91,7 @@ class BaseDeclaration(records.ImmutableRecord(
 class BaseSingleTypeDeclaration(BaseDeclaration):
   optional_attributes = {'type': None}
 
-  def WithTemplates(self, template_map):
+  def ReplaceTypes(self, template_map):
     for template, type in template_map:
       if template == self.type:
         new_decl = copy.copy(self)
@@ -169,7 +169,7 @@ class DeclarationMeta(type):
   def ApplyTemplatesToNested(cls, nested, template_map):
     nested = dict(nested)
     for n_name, decl in nested.items():
-      nested[n_name] = decl.WithTemplates(template_map)
+      nested[n_name] = decl.ReplaceTypes(template_map)
     cls.__nested__ = nested
 
 
@@ -183,7 +183,7 @@ def Struct(name):
 class StructMeta(DeclarationMeta):
   __slots__ = ()
 
-  def WithTemplates(cls, template_map):
+  def ReplaceTypes(cls, template_map):
     """We're not templated, but a field or nested type might me."""
     kwargs = {
         'fields': cls.__fields__.values(),
@@ -421,7 +421,7 @@ class InterfaceMeta(DeclarationMeta):
         methods[i] = method
     kwargs['methods'] = methods
 
-  def WithTemplates(cls, template_map):
+  def ReplaceTypes(cls, template_map):
     kwargs = {
         'methods': cls.__methods__.values(),
         'superclasses': cls.__superclasses__,
@@ -633,7 +633,7 @@ class BaseTemplated(BaseDeclaration):
       return generics.Templated(self, template_map)
 
     # Full conversions only.
-    return self.WithTemplates(template_map)
+    return self.ReplaceTypes(template_map)
 
   def FinishDeclaration(self, **kwargs):
     if self._finished:
@@ -644,7 +644,7 @@ class BaseTemplated(BaseDeclaration):
     for decl in self.__dependent_decls__:
       decl(kwargs)
 
-  def WithTemplates(self, template_map):
+  def ReplaceTypes(self, template_map):
     # Filter the template_map to what's relevant to us.
     local_tpl_map = [
         (original, final)
@@ -712,9 +712,9 @@ class TemplatedMethod(BaseTemplated):
     template_map = [
         (generics.MethodTemplate(i), value)
         for i, value in enumerate(generics.EnsureTuple(template_values))]
-    return self.WithTemplates(template_map)
+    return self.ReplaceTypes(template_map)
 
-  def WithTemplates(self, template_map):
+  def ReplaceTypes(self, template_map):
     return Method(
         self.id, self.name,
         annotations=generics.ReplaceMaybeList(self.annotations, template_map),

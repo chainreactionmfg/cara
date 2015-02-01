@@ -51,3 +51,13 @@ class BasicsTest(unittest.TestCase):
         assert type(wrapped) == SimpleInterface
         assert type(SimpleInterface(wrapped)) == SimpleInterface
         assert SimpleInterface(wrapped) is wrapped
+
+    def test_replace_types(self):
+        class BasicReplacement(object):
+            pass
+        ReplacedInterface = (
+            SimpleInterface.ReplaceTypes([(Basic, BasicReplacement)]))
+        replaced_params = ReplacedInterface.__methods__['structIn'].params
+        replaced_results = ReplacedInterface.__methods__['structOut'].results
+        assert replaced_params == BasicReplacement
+        assert replaced_results == BasicReplacement

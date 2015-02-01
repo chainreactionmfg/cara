@@ -14,8 +14,8 @@ def ReplaceObject(obj, template_map):
 
 
 def ReplaceType(type, template_map):
-  if type.__class__.__name__ == 'BaseTemplated':  #isinstance(type, BaseTemplated):
-    return type.WithTemplates(template_map)
+  if type.__class__.__name__ == 'BaseTemplated':
+    return type.ReplaceTypes(template_map)
   elif isinstance(type, Template):
     for template, replacement in template_map:
       # Avoid == recursion issues.
@@ -28,7 +28,11 @@ def ReplaceType(type, template_map):
           type.id == template.id):
         return replacement
   elif isinstance(type, Templated):
-    return type.WithTemplates(template_map)
+    return type.ReplaceTypes(template_map)
+  else:
+    for template, replacement in template_map:
+      if template == type:
+        return replacement
   return type
 
 
@@ -49,7 +53,7 @@ MethodTemplate = records.ImmutableRecord('MethodTemplate', ['id'])
 class Templated(records.ImmutableRecord(
     'Templated', ['cls', 'template_map'])):
   # self.template_map is a map from original to intermediary (or to final).
-  def WithTemplates(self, template_map):
+  def ReplaceTypes(self, template_map):
     # the template_map argument is a map from intermediary to final.
     resulting_map = []
     full = True
@@ -69,7 +73,7 @@ class Templated(records.ImmutableRecord(
 
     if full:
       # Replacing all templates, so return the actual class properly templated.
-      return self.cls.WithTemplates(resulting_map)
+      return self.cls.ReplaceTypes(resulting_map)
     if resulting_map != self.template_map:
       # Partially replaced, return a new version of ourselves.
       return type(self)(self.cls, resulting_map)
@@ -83,7 +87,7 @@ class Templated(records.ImmutableRecord(
   def __getitem__(self, template_values):
     template_map = [(self.cls.Template(i), value)
                     for i, value in enumerate(EnsureTuple(template_values))]
-    return self.WithTemplates(template_map)
+    return self.ReplaceTypes(template_map)
 
 
 def EnsureTuple(obj):
