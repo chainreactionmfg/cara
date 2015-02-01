@@ -1,11 +1,13 @@
 class TypeRegistry(object):
   def __init__(self):
     self._registry = {}
-    self._registry_types = []
+    self._registry_types = ()
 
   def Register(self, base_type, registered):
+    if base_type in self._registry:
+      return
     self._registry[base_type] = registered
-    self._registry_types.append(base_type)
+    self._registry_types += (base_type,)
 
   def LookUp(self, instance):
     for base_type, registered in self._registry.items():

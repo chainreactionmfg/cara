@@ -108,13 +108,13 @@ def _RegisterPseudBackend():
     tornado.concurrent.chain_future(future, new_future)
     return new_future
   # First register the future conversions of method calls.
-  cara.register_type_conversion_callback(
+  cara.type_conversion_registry.Register(
       tornado.concurrent.Future, ConvertFutureCorrectly)
-  cara.register_type_conversion_callback(
+  cara.type_conversion_registry.Register(
       concurrent.futures.Future, ConvertFutureCorrectly)
   # Next register the remote descriptor handler for when those method calls
   # return a remote interface.
-  cara.BaseInterface.register_remote_type(
+  cara.BaseInterface.remote_type_registry.Register(
       RemoteInterfaceDescriptor, RemoteInterfaceClient.FromDescriptor)
 
 

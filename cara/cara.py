@@ -483,7 +483,7 @@ class BaseInterface(metaclass=InterfaceMeta):
     """
     if cls.remote_type_registry.IsInstanceOfAny(value):
       # value came over the wire, so allow backends to send method calls back.
-      cls.remote_type_registry.LookUp(value)(cls, value)
+      return cls.remote_type_registry.LookUp(value)(cls, value)
     # Case 3
     if isinstance(value, cls):
         base_interface = _find_interface_base_class(type(value))
