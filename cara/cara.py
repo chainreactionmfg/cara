@@ -169,7 +169,7 @@ class DeclarationMeta(type):
   def ApplyTemplatesToNested(cls, nested, template_map):
     nested = dict(nested)
     for n_name, decl in nested.items():
-      nested[n_name] = decl.ReplaceTypes(template_map)
+      nested[n_name] = generics.ReplaceType(decl, template_map, memo=memo)
     cls.__nested__ = nested
 
 
