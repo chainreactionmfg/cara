@@ -722,8 +722,8 @@ class TemplatedMethod(BaseTemplated):
 
   def ReplaceTypes(self, template_map, memo=None):
     annotations = generics.ReplaceMaybeList(
-        self.annotations, template_map, memo=memo),
-    params = generics.ReplaceMaybeList(self.params, template_map, memo=memo),
+        self.annotations, template_map, memo=memo)
+    params = generics.ReplaceMaybeList(self.params, template_map, memo=memo)
     results = generics.ReplaceMaybeList(self.results, template_map, memo=memo)
     return Method(
         self.id, self.name, annotations=annotations,
