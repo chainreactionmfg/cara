@@ -55,3 +55,8 @@ Then you can define a schema in a `.capnp` file:
 capnp compile -ocara filename.capnp
 # Outputs filename_capnp.py
 ```
+
+### Using structs, interfaces, etc.
+
+Refer to [Structs](structs.md) and [Interfaces](interfaces.md), and
+[Advanced Usage](advanced_usage.md) if you're interested.

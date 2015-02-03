@@ -10,7 +10,6 @@ from . import list_cache
 from . import type_registry
 from .generics import MethodTemplate  # noqa
 
-MARKER = records.ImmutableRecord('ObjectMarker', ['name'])
 AnnotationValue = records.ImmutableRecord(
     'AnnotationValue', ['annotation', 'value'])
 Method = records.ImmutableRecord(
@@ -91,7 +90,7 @@ class BaseDeclaration(records.ImmutableRecord(
 class BaseSingleTypeDeclaration(BaseDeclaration):
   optional_attributes = {'type': None}
 
-  def ReplaceTypes(self, template_map):
+  def ReplaceTypes(self, template_map, memo=None):
     for template, type in template_map:
       if template == self.type:
         new_decl = copy.copy(self)
@@ -101,7 +100,7 @@ class BaseSingleTypeDeclaration(BaseDeclaration):
 
 
 class Annotation(BaseSingleTypeDeclaration):
-  ALL = MARKER('*')
+  ALL = generics.MARKER('*')
   optional_attributes = {'applies_to': ALL}
 
   def __call__(self, val=None):
@@ -166,10 +165,10 @@ def NestedCatchingModifier(cls):
 
 class DeclarationMeta(type):
 
-  def ApplyTemplatesToNested(cls, nested, template_map):
+  def ApplyTemplatesToNested(cls, nested, template_map, memo=None):
     nested = dict(nested)
     for n_name, decl in nested.items():
-      nested[n_name] = decl.ReplaceTypes(template_map)
+      nested[n_name] = generics.ReplaceType(decl, template_map, memo=memo)
     cls.__nested__ = nested
 
 
@@ -183,15 +182,15 @@ def Struct(name):
 class StructMeta(DeclarationMeta):
   __slots__ = ()
 
-  def ReplaceTypes(cls, template_map):
+  def ReplaceTypes(cls, template_map, memo=None):
     """We're not templated, but a field or nested type might me."""
     kwargs = {
         'fields': cls.__fields__.values(),
         'annotations': cls.__annotations__
     }
-    cls.ApplyTemplatesToKwargs(kwargs, template_map)
+    cls.ApplyTemplatesToKwargs(kwargs, template_map, memo=memo)
     new_decl = Struct(cls.__name__)
-    new_decl.ApplyTemplatesToNested(cls.__nested__, template_map)
+    new_decl.ApplyTemplatesToNested(cls.__nested__, template_map, memo=memo)
     if (kwargs['fields'] != cls.__id_fields__
             or kwargs['annotations'] != cls.__annotations__
             or new_decl.__nested__ != cls.__nested__):
@@ -200,9 +199,9 @@ class StructMeta(DeclarationMeta):
         return new_decl
     return cls
 
-  def ApplyTemplatesToKwargs(cls, kwargs, template_map):
+  def ApplyTemplatesToKwargs(cls, kwargs, template_map, memo=None):
     kwargs['fields'] = [
-        generics.ReplaceObject(field, template_map)
+        generics.ReplaceObject(field, template_map, memo=memo)
         for field in kwargs['fields']]
 
   def FinishDeclaration(cls, fields=None, annotations=None):
@@ -408,11 +407,12 @@ class InterfaceMeta(DeclarationMeta):
     dct['__new__'] = lambda cls, *_, **__: object.__new__(cls)
     return super(InterfaceMeta, meta).__new__(meta, name, bases, dct)
 
-  def ApplyTemplatesToKwargs(cls, kwargs, template_map):
+  def ApplyTemplatesToKwargs(cls, kwargs, template_map, memo=None):
     methods = list(kwargs['methods'])
     for i, method in enumerate(methods):
-      params = generics.ReplaceMaybeList(method.params, template_map)
-      results = generics.ReplaceMaybeList(method.results, template_map)
+      params = generics.ReplaceMaybeList(method.params, template_map, memo=memo)
+      results = generics.ReplaceMaybeList(
+          method.results, template_map, memo=memo)
       # Only copy the method if it's going to change.
       if params is not method.params or results is not method.results:
         method = copy.copy(method)
@@ -421,15 +421,15 @@ class InterfaceMeta(DeclarationMeta):
         methods[i] = method
     kwargs['methods'] = methods
 
-  def ReplaceTypes(cls, template_map):
+  def ReplaceTypes(cls, template_map, memo=None):
     kwargs = {
         'methods': cls.__methods__.values(),
         'superclasses': cls.__superclasses__,
         'annotations': cls.__annotations__,
     }
-    cls.ApplyTemplatesToKwargs(kwargs, template_map)
+    cls.ApplyTemplatesToKwargs(kwargs, template_map, memo=memo)
     new_decl = Interface(cls.__name__)
-    new_decl.ApplyTemplatesToNested(cls.__nested__, template_map)
+    new_decl.ApplyTemplatesToNested(cls.__nested__, template_map, memo=memo)
     if (kwargs['methods'] != cls.__id_methods__
             or kwargs['superclasses'] != cls.__superclasses__
             or kwargs['annotations'] != cls.__annotations__
@@ -633,7 +633,7 @@ class BaseTemplated(BaseDeclaration):
       return generics.Templated(self, template_map)
 
     # Full conversions only.
-    return self.ReplaceTypes(template_map)
+    return self.ReplaceTypes(template_map, memo={})
 
   def FinishDeclaration(self, **kwargs):
     if self._finished:
@@ -644,7 +644,7 @@ class BaseTemplated(BaseDeclaration):
     for decl in self.__dependent_decls__:
       decl(kwargs)
 
-  def ReplaceTypes(self, template_map):
+  def ReplaceTypes(self, template_map, memo=None):
     # Filter the template_map to what's relevant to us.
     local_tpl_map = [
         (original, final)
@@ -666,9 +666,9 @@ class BaseTemplated(BaseDeclaration):
       # Use the original non-local-only template_map because it may include more
       # templates that are used by types in fields or nested classes.
       kwargs = dict(kwargs)
-      new_decl.ApplyTemplatesToKwargs(kwargs, template_map)
+      new_decl.ApplyTemplatesToKwargs(kwargs, template_map, memo=memo)
       new_decl.FinishDeclaration(**kwargs)
-      new_decl.ApplyTemplatesToNested(self.__nested__, template_map)
+      new_decl.ApplyTemplatesToNested(self.__nested__, template_map, memo=memo)
 
     # If not finished, return self.base_type(name) and mark it as needing to be
     # finished when self is finished.
@@ -712,11 +712,13 @@ class TemplatedMethod(BaseTemplated):
     template_map = [
         (generics.MethodTemplate(i), value)
         for i, value in enumerate(generics.EnsureTuple(template_values))]
-    return self.ReplaceTypes(template_map)
+    return self.ReplaceTypes(template_map, memo={})
 
-  def ReplaceTypes(self, template_map):
+  def ReplaceTypes(self, template_map, memo=None):
+    annotations = generics.ReplaceMaybeList(
+        self.annotations, template_map, memo=memo),
+    params = generics.ReplaceMaybeList(self.params, template_map, memo=memo),
+    results = generics.ReplaceMaybeList(self.results, template_map, memo=memo)
     return Method(
-        self.id, self.name,
-        annotations=generics.ReplaceMaybeList(self.annotations, template_map),
-        params=generics.ReplaceMaybeList(self.params, template_map),
-        results=generics.ReplaceMaybeList(self.results, template_map))
+        self.id, self.name, annotations=annotations,
+        params=params, results=results)
