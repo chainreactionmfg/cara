@@ -32,25 +32,37 @@ def ReplaceObject(obj, template_map, memo=None):
 
 
 def ReplaceType(type, template_map, memo=None):
+  d = id(type)
+  memo = memo or {}
+  cached = memo.get(d, NID)
+  if cached is not NID:
+    return cached
+
   if type.__class__.__name__ == 'BaseTemplated':
-    return type.ReplaceTypes(template_map, memo=memo)
+    ret = memo[d] = type.ReplaceTypes(template_map, memo=memo)
+    return ret
   elif isinstance(type, Template):
     for template, replacement in template_map:
       # Avoid == recursion issues.
       if (isinstance(template, Template) and
           type.cls is template.cls and type.id == template.id):
-        return replacement
+        ret = memo[d] = replacement
+        return ret
   elif isinstance(type, MethodTemplate):
     for template, replacement in template_map:
       if (isinstance(template, MethodTemplate) and
           type.id == template.id):
-        return replacement
+        ret = memo[d] = replacement
+        return ret
   elif isinstance(type, Templated):
-    return type.ReplaceTypes(template_map, memo=memo)
+    ret = memo[d] = type.ReplaceTypes(template_map, memo=memo)
+    return ret
   else:
     for template, replacement in template_map:
       if template == type:
-        return replacement
+        ret = memo[d] = replacement
+        return ret
+  memo[d] = type
   return type
 
 

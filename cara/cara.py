@@ -166,9 +166,14 @@ def NestedCatchingModifier(cls):
 class DeclarationMeta(type):
 
   def ApplyTemplatesToNested(cls, nested, template_map, memo=None):
+    if isinstance(nested, generics.MARKER):
+      return
     nested = dict(nested)
     for n_name, decl in nested.items():
-      nested[n_name] = generics.ReplaceType(decl, template_map, memo=memo)
+      replacement = generics.ReplaceType(decl, template_map, memo=memo)
+      if hasattr(replacement, 'ReplaceTypes'):
+          replacement = replacement.ReplaceTypes(template_map, memo=memo)
+      nested[n_name] = replacement
     cls.__nested__ = nested
 
 
@@ -679,7 +684,8 @@ class BaseTemplated(BaseDeclaration):
         return type.name if hasattr(type, 'name') else str(type)
     new_decl = type(self).base_type(name='%s[%s]' % (
         self.name, ', '.join(get_name(type) for _, type in local_tpl_map)))
-    new_decl.__nested__ = type('Nested classes are not available yet.', (), {})
+    new_decl.__nested__ = generics.MARKER(
+        'Nested classes are not available yet.')
     # Put it in the cache early so we can avoid any recursion problems from the
     # ApplyTemplates call in LocalFinishDeclaration
     self.__cache__[local_tpl_map] = new_decl
