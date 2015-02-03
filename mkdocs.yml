@@ -5,6 +5,7 @@ pages:
   - [structs.md, Structs]
   - [interfaces.md, Interfaces]
   - [remote.md, Interfaces on the Wire]
+  - [advanced_usage.md, Advanced Usage]
 theme: readthedocs
 
 site_url: http://cara.readthedocs.org/en/latest/
