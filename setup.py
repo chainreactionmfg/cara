@@ -10,8 +10,8 @@ from setuptools.command.develop import develop
 from setuptools.command.test import test
 
 MAJOR = 0
-MINOR = 5
-MICRO = 6
+MINOR = 6
+MICRO = 0
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 
 with open('README.md') as readme:
