@@ -56,10 +56,14 @@ type_conversion_registry = type_registry.TypeRegistry()
 def _ConvertToType(type, value):
   """Convert a value to a field (or param's) type.
 
-  Sometimes the value is not converted directly, this can be controlled by the
-  __type_conversion_registry__. If the given value is an instance of a type in
+  Sometimes the value is not converted directly, this can be controlled by
+  type_conversion_registry. If the given value is an instance of a type in
   that registry (or a subclass of a type), then conversion will be delegated to
   the function registered with it.
+
+  NOTE: This can't be done through singledispatch because it gets hung up on
+  records (the second record class's instance passed in hangs). Once that's
+  resolved, we can switch this to singledispatch.
 
   Args:
     type: type to convert to.
@@ -520,6 +524,9 @@ class BaseInterface(metaclass=InterfaceMeta):
         * By the user on a subclass, which we should ignore. So we're not
             __new__ here.
     """
+    # NOTE: Cannot use singledispatch here since value can be all sorts of
+    # incompatible types (like dict, since singledispatch makes weakrefs and you
+    # can't get a weakref to a dict).
     if cls.remote_type_registry.IsInstanceOfAny(value):
       # value came over the wire, so allow backends to send method calls back.
       return cls.remote_type_registry.LookUp(value)(cls, value)
