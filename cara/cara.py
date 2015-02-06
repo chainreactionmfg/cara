@@ -189,6 +189,8 @@ class StructMeta(DeclarationMeta):
 
   def ReplaceTypes(cls, template_map, memo=None):
     """We're not templated, but a field or nested type might me."""
+    if not hasattr(cls, '__fields__'):
+      return cls
     kwargs = {
         'fields': cls.__fields__.values(),
         'annotations': cls.__annotations__
@@ -218,6 +220,17 @@ class StructMeta(DeclarationMeta):
     for field in fields:
       cls_fields[field.name] = field
       idfields[field.id] = field
+
+  def __eq__(cls, other):
+    return cls is other or (
+        type(cls) is type(other)
+        and len(cls.mro()) == len(other.mro())  # Subclasses
+        and hasattr(cls, '__fields__') and hasattr(other, '__fields__')
+        and cls.__fields__ == other.__fields__
+        and cls.__annotations__ == other.__annotations__)
+
+  def __hash__(cls):
+    return object.__hash__(cls)
 
 
 class Field(records.ImmutableRecord(
@@ -332,7 +345,7 @@ class BaseStruct(dict, metaclass=StructMeta):
     )
 
   def __eq__(self, other):
-    return self is other or (type(self) is type(other) and all(
+    return self is other or (type(self) == type(other) and all(
         self[field.id] == other[field.id]
         for field in type(self).__id_fields__
         if self[field.id] or other[field.id]))
@@ -361,7 +374,16 @@ class BaseList(list):
     if not issubclass(self.sub_type, BaseStruct):
       raise TypeError('Cannot use Get on a List of non-Struct types.')
     return next(val for val in self
-                if all(val[attr] == kwargs[attr] for attr in kwargs.keys()))
+                if all(val[attr] == kwarg for attr, kwarg in kwargs.items()))
+
+  @classmethod
+  def ReplaceTypes(cls, template_map, memo=None):
+    new_sub_type = generics.ReplaceType(cls.sub_type, template_map, memo=memo)
+    if hasattr(new_sub_type, 'ReplaceTypes'):
+      new_sub_type = new_sub_type.ReplaceTypes(template_map, memo=memo)
+    if cls.sub_type == new_sub_type:
+      return cls
+    return List(new_sub_type)
 
 
 __list_cache__ = list_cache.ListCache()
@@ -456,6 +478,18 @@ class InterfaceMeta(DeclarationMeta):
       id_methods[method.id] = method
     # Lastly, only allow __new__ to be overridden on the declaration class.
     cls.__new__ = cls.NewWrapper
+
+  def __eq__(cls, other):
+    return cls is other or (
+        type(cls) is type(other)
+        and len(cls.mro()) == len(other.mro())  # Subclasses
+        and hasattr(cls, '__methods__') and hasattr(other, '__methods__')
+        and cls.__superclasses__ == other.__superclasses__
+        and cls.__methods__ == other.__methods__
+        and cls.__annotations__ == other.__annotations__)
+
+  def __hash__(cls):
+    return object.__hash__(cls)
 
 
 class BaseInterface(metaclass=InterfaceMeta):
@@ -654,7 +688,7 @@ class BaseTemplated(BaseDeclaration):
     local_tpl_map = [
         (original, final)
         for original, final in template_map
-        if original.cls == self
+        if isinstance(original, generics.Template) and original.cls == self
     ]
     if len(local_tpl_map) != len(self.templates):
         if not local_tpl_map:
