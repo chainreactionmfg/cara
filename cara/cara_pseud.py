@@ -64,7 +64,8 @@ def setup_server(server):
     # TODO: fix this, it should be 4 functions, I think
     server_table = {
         100: (cara.BaseInterface, iface_to_mp, mp_to_remote_iface),
-        101: (RemoteInterfaceClient, iface_to_mp, mp_to_remote_iface)}
+        101: (RemoteInterfaceClient, iface_to_mp, mp_to_remote_iface),
+    }
 
     server.packer.translation_table = server_table
     server.register_rpc(handler.registered, 'registered')
@@ -84,7 +85,7 @@ def setup_client(client):
         return RemoteInterfaceDescriptor(remote_id, client)
     client_table = {
         100: (cara.BaseInterface, iface_to_mp, mp_to_remote_iface),
-        101: (RemoteInterfaceClient, iface_to_mp, mp_to_remote_iface)
+        101: (RemoteInterfaceClient, iface_to_mp, mp_to_remote_iface),
     }
     client.packer.translation_table = client_table
     client.register_rpc(handler.registered, 'registered')

@@ -127,22 +127,31 @@ class PseudTest(BasePseudTest):
 
     @tornado.testing.gen_test(timeout=0.2)
     def test_simple(self):
+        this = self
         yield self.create_client_server()
 
         @self.server.register_rpc
         def test():
             self.stop(True)
 
+        @cara_pseud.register_interface(self.server)
+        class BazIfaceImpl(BazIface):
+            def call(self, is_called):
+                this.stop(True)
+
         yield self.client.test()
+        assert self.wait()
+        yield BazIface(self.client).call(True)
         assert self.wait()
 
     @tornado.testing.gen_test(timeout=0.5)
     def test_call_client_cb(self):
+        this = self
         yield self.create_client_server()
 
         class Foo(FooIface):
-            def callback(foo_self):
-                self.stop(True)
+            def callback(self):
+                this.stop(True)
 
         @cara_pseud.register_interface(self.server, FooIface)
         def calls_cb(foo):
