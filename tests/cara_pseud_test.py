@@ -175,7 +175,17 @@ class PseudTest(BasePseudTest):
 
 
 @pytest.mark.usefixtures('stream_mock')
-class ThreePartyTest(BasePseudTest):
+class ProxyTest(BasePseudTest):
+
+    class ThreeIfaceImpl(ThreeIface):
+        def __init__(self):
+            self._last = None
+
+        def returnIface(self):
+            return self._last
+
+        def acceptIface(self, accept):
+            self._last = accept
 
     @tornado.testing.gen_test(timeout=0.5)
     def test_three_parties(self):
@@ -187,16 +197,8 @@ class ThreePartyTest(BasePseudTest):
         client_b = self.create_client('ipc://party', user_id=b'client-b')
         client_c = self.create_client('ipc://party', user_id=b'client-c')
 
-        class ThreeIfaceImpl(ThreeIface):
-            def __init__(self):
-                self._last = None
-
-            def returnIface(self):
-                return self._last
-
-            def acceptIface(self, accept):
-                self._last = accept
-        cara_pseud.register_interface(server_a, ThreeIface, ThreeIfaceImpl())
+        cara_pseud.register_interface(
+            server_a, ThreeIface, self.ThreeIfaceImpl())
 
         yield [server_a.start(), client_b.start(), client_c.start()]
 
@@ -224,6 +226,42 @@ class ThreePartyTest(BasePseudTest):
             (b'server', b'client-b'),  # A -> B
             (b'client-b', b'server'),  # A <- B
             (b'server', b'client-c'),  # C <- A
+        ]
+        for (expected_sender, expected_recv), (sender, recv, _) in zip(
+                expected, self.stream_mock.packets):
+            assert expected_sender == sender
+            assert expected_recv == recv
+
+    @tornado.testing.gen_test(timeout=0.5)
+    def test_back_forth(self):
+        server = self.create_server('ipc://date')
+        client = self.create_client('ipc://date')
+
+        cara_pseud.register_interface(server, ThreeIface, self.ThreeIfaceImpl)
+        yield [server.start(), client.start()]
+
+        client = ThreeIface(client)
+        # Send interface.
+        yield client.acceptIface({'normalMethod': lambda input: 'out'})
+        # Get it back.
+        mine = yield client.returnIface()
+        # Should proxy through the server to ourselves.
+        result = yield mine.normalMethod('in')
+        assert result == 'out'
+
+        expected = [
+            # Send interface.
+            (b'client', b'server'),
+            (b'server', b'client'),
+            # Get it back
+            (b'client', b'server'),
+            (b'server', b'client'),
+            # Call the interface
+            (b'client', b'server'),
+            (b'server', b'client'),
+            # Proxied through us.
+            (b'client', b'server'),
+            (b'server', b'client'),
         ]
         for (expected_sender, expected_recv), (sender, recv, _) in zip(
                 expected, self.stream_mock.packets):
