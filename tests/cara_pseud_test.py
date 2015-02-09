@@ -1,76 +1,131 @@
+import collections
 from unittest import mock
 
 import tornado.testing
 import pseud
+import pytest
 import zmq
 
 import cara
 from cara import cara_pseud
-from tests.cara_pseud_test_capnp import FooIface, BarIface, BazIface
+from tests.cara_pseud_test_capnp import (
+    FooIface, BarIface, BazIface, ThreeIface)
 
 
-class PseudTest(tornado.testing.AsyncTestCase):
+@pytest.fixture
+def stream_mock(request):
+    # Don't let pseud make any real contexts.
+    patch = mock.patch.object(zmq.Context, 'instance')
+    mock_context = patch.start()
+    request.addfinalizer(patch.stop)
 
-    def setUp(self):
-        super().setUp()
-        self.endpoint = b'ipc://pseud-test-ipc'
-        # Don't let pseud make any real contexts.
-        patch = mock.patch.object(pseud.Server, '_make_context')
-        mock_context = patch.start()
-        self.addCleanup(patch.stop)
-        mock_context.return_value.socket.return_value.mechanism = zmq.PLAIN
+    # Create a new mock socket so the binds and connects don't combine.
+    def create_socket(sock_type):
+        socket = mock.MagicMock()
+        socket.mechanism = zmq.PLAIN
+        return socket
+    mock_context.return_value.socket.side_effect = create_socket
 
-        # Return a stream mock that sends packets to the other stream.
-        patch = mock.patch.object(
-            zmq.eventloop.zmqstream, 'ZMQStream')
-        self.stream_mock = patch.start()
-        self.addCleanup(patch.stop)
-        self.stream_mock.side_effect = self.create_stream
+    # Return a stream mock that sends packets to the other stream.
+    patch = mock.patch.object(
+        zmq.eventloop.zmqstream, 'ZMQStream')
+    stream_mock = patch.start()
+    request.addfinalizer(patch.stop)
 
-    def create_stream(self, socket, io_loop):
-        new_stream = mock.MagicMock()
-        new_stream.socket = socket
+    # endpoint -> stream
+    stream_mock.servers = servers = {}
+    # endpoint -> routing_id -> stream
+    stream_mock.clients = clients = collections.defaultdict(dict)
+    stream_mock.packets = packets = []
+    streams = {}
+
+    def create_stream(socket, io_loop):
+        stream = mock.MagicMock()
+        stream.socket = socket
+        is_server = False
+        endpoint = None
+
         def send_effect(data, callback):
-            data = [zmq.Frame(frame) for frame in data]
+            if not is_server:
+                clients[endpoint][stream.socket.plain_username] = stream
             # Send data to the _other_ stream.
-            other_stream = (
-                self.server_stream
-                if new_stream is self.client_stream
-                else self.client_stream)
+            if is_server:
+                # Server uses the ROUTER's routing id (which we set).
+                other_stream = clients[endpoint][data[0]]
+            else:
+                other_stream = servers[endpoint]
+
+            if not is_server:
+                # Act like a ROUTER socket and set our username as the
+                # routing id.
+                data[0] = stream.socket.plain_username
+            packets.append((streams[stream], streams[other_stream], data))
+            data = [zmq.Frame(frame) for frame in data]
+
             call = other_stream.on_recv.mock_calls[0]
             name, args, kwargs = call
+            on_recv_cb = args[0]
             with mock.patch.object(data[-1], 'get'):
                 # Have to make the User-Id return our username.
-                username = new_stream.socket.plain_username
-                if isinstance(username, (bytes, str)):
+                if not is_server or True:
+                  username = stream.socket.plain_username
+                  if isinstance(username, (bytes, str)):
                     data[-1].get.return_value = username.decode('utf-8')
-                args[0](data)
+                on_recv_cb(data)
             callback()
-        new_stream.send_multipart.side_effect = send_effect
-        return new_stream
+
+        # Get the last endpoint the socket was bound to.
+        for (name, args, kwargs) in reversed(socket.mock_calls):
+            if name == 'bind':
+                endpoint = args[0]
+                is_server = True
+                break
+            if name == 'connect':
+                endpoint = args[0]
+                break
+        if is_server:
+            servers[endpoint] = stream
+            streams[stream] = socket.identity
+            stream.send_multipart.side_effect = send_effect
+        else:
+            # routing id unknown until first send for clients.
+            streams[stream] = stream.socket.plain_username
+            stream.send_multipart.side_effect = send_effect
+        return stream
+    stream_mock.side_effect = create_stream
+    # Make the stream mock available on the class.
+    request.cls.stream_mock = stream_mock
+    return stream_mock
+
+
+class BasePseudTest(tornado.testing.AsyncTestCase):
+    def create_server(self, endpoint):
+        server = pseud.Server(
+            b'server', io_loop=self.io_loop, security_plugin='trusted_peer')
+        server.bind(endpoint)
+        return cara_pseud.setup_server(server)
+
+    def create_client(self, endpoint, user_id=b'client'):
+        client = pseud.Client(
+            b'server', io_loop=self.io_loop,
+            security_plugin='plain', user_id=user_id, password=b'_')
+        client.connect(endpoint)
+        return cara_pseud.setup_client(client)
+
+
+@pytest.mark.usefixtures('stream_mock')
+class PseudTest(BasePseudTest):
 
     def create_client_server(self):
-        self.server = self.create_server()
-        self.client = self.create_client()
+        endpoint = b'ipc://pseud-test-ipc'
+        self.server = self.create_server(endpoint)
+        self.client = self.create_client(endpoint)
         starts = [self.server.start(), self.client.start()]
         self.server_stream = self.server.reader
         self.client_stream = self.client.reader
         return starts
 
-    def create_server(self):
-        server = pseud.Server(
-            b'server', io_loop=self.io_loop, security_plugin='trusted_peer')
-        server.bind(self.endpoint)
-        return cara_pseud.setup_server(server)
-
-    def create_client(self):
-        client = pseud.Client(
-            b'server', io_loop=self.io_loop,
-            security_plugin='plain', user_id=b'client', password=b'_')
-        client.connect(self.endpoint)
-        return cara_pseud.setup_client(client)
-
-    @tornado.testing.gen_test(timeout=0.5)
+    @tornado.testing.gen_test(timeout=0.2)
     def test_simple(self):
         yield self.create_client_server()
 
