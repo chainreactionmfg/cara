@@ -172,3 +172,60 @@ class PseudTest(BasePseudTest):
         cb = yield BarIface(self.client).returnCb()
         yield cb.call(True)
         assert self.wait()
+
+
+@pytest.mark.usefixtures('stream_mock')
+class ThreePartyTest(BasePseudTest):
+
+    @tornado.testing.gen_test(timeout=0.5)
+    def test_three_parties(self):
+        # Test three parties, A, B, and C. B sends an interface to A, then C
+        # gets that interface from B. Calling a method on that interface on C
+        # should proxy through A to B.
+        # interface goes B -> A -> C
+        server_a = self.create_server('ipc://party')
+        client_b = self.create_client('ipc://party', user_id=b'client-b')
+        client_c = self.create_client('ipc://party', user_id=b'client-c')
+
+        class ThreeIfaceImpl(ThreeIface):
+            def __init__(self):
+                self._last = None
+
+            def returnIface(self):
+                return self._last
+
+            def acceptIface(self, accept):
+                self._last = accept
+        cara_pseud.register_interface(server_a, ThreeIface, ThreeIfaceImpl())
+
+        yield [server_a.start(), client_b.start(), client_c.start()]
+
+        client_b = ThreeIface(client_b)
+        client_c = ThreeIface(client_c)
+
+        # B -> A
+        yield client_b.acceptIface({'normalMethod': lambda input: 'output'})
+        # C <- A
+        iface_from_b = yield client_c.returnIface()
+
+        # Call the interface from B through C.
+        result = yield iface_from_b.normalMethod('input')
+        assert result == 'output'
+
+        expected = [
+            # B -> A
+            (b'client-b', b'server'),
+            (b'server', b'client-b'),
+            # C <- A
+            (b'client-c', b'server'),
+            (b'server', b'client-c'),
+            # Call interface from B through C.
+            (b'client-c', b'server'),  # C -> A
+            (b'server', b'client-b'),  # A -> B
+            (b'client-b', b'server'),  # A <- B
+            (b'server', b'client-c'),  # C <- A
+        ]
+        for (expected_sender, expected_recv), (sender, recv, _) in zip(
+                expected, self.stream_mock.packets):
+            assert expected_sender == sender
+            assert expected_recv == recv

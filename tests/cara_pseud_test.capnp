@@ -11,3 +11,12 @@ interface BarIface {
 interface BazIface {
     call @0 (is_called :Bool) -> ();
 }
+
+
+interface ThreeIface {
+    interface Simple {
+        normalMethod @0 (input :Text) -> (output :Text);
+    }
+    returnIface @0 () -> (return :Simple);
+    acceptIface @1 (accept :Simple) -> ();
+}
