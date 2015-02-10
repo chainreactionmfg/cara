@@ -11,6 +11,7 @@ class BasicsTest(unittest.TestCase):
 
     def test_struct_creation(self):
         assert str(Basic({0: 1})) == 'Basic({field: 1})'
+        assert str(Basic({'0': 1})) == 'Basic({field: 1})'
         assert str(Basic({'field': 1})) == 'Basic({field: 1})'
         assert str(Basic({b'field': 1})) == 'Basic({field: 1})'
 
