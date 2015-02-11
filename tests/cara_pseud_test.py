@@ -45,7 +45,7 @@ def stream_mock(request):
         is_server = False
         endpoint = None
 
-        def send_effect(data, callback):
+        def send_effect(data):
             if not is_server:
                 clients[endpoint][stream.socket.plain_username] = stream
             # Send data to the _other_ stream.
@@ -72,7 +72,6 @@ def stream_mock(request):
                   if isinstance(username, (bytes, str)):
                     data[-1].get.return_value = username.decode('utf-8')
                 on_recv_cb(data)
-            callback()
 
         # Get the last endpoint the socket was bound to.
         for (name, args, kwargs) in reversed(socket.mock_calls):
@@ -125,7 +124,7 @@ class PseudTest(BasePseudTest):
         self.client_stream = self.client.reader
         return starts
 
-    @tornado.testing.gen_test(timeout=0.2)
+    @tornado.testing.gen_test(timeout=0.1)
     def test_simple(self):
         this = self
         yield self.create_client_server()
@@ -144,7 +143,7 @@ class PseudTest(BasePseudTest):
         yield BazIface(self.client).call(True)
         assert self.wait()
 
-    @tornado.testing.gen_test(timeout=0.5)
+    @tornado.testing.gen_test(timeout=0.1)
     def test_call_client_cb(self):
         this = self
         yield self.create_client_server()
@@ -160,7 +159,7 @@ class PseudTest(BasePseudTest):
         yield self.client.callback(Foo())
         assert self.wait()
 
-    @tornado.testing.gen_test(timeout=0.5)
+    @tornado.testing.gen_test(timeout=0.1)
     def test_call_server_cb(self):
         yield self.create_client_server()
 
@@ -187,7 +186,7 @@ class ProxyTest(BasePseudTest):
         def acceptIface(self, accept):
             self._last = accept
 
-    @tornado.testing.gen_test(timeout=0.5)
+    @tornado.testing.gen_test(timeout=0.1)
     def test_three_parties(self):
         # Test three parties, A, B, and C. B sends an interface to A, then C
         # gets that interface from B. Calling a method on that interface on C
@@ -232,7 +231,7 @@ class ProxyTest(BasePseudTest):
             assert expected_sender == sender
             assert expected_recv == recv
 
-    @tornado.testing.gen_test(timeout=0.5)
+    @tornado.testing.gen_test(timeout=0.1)
     def test_back_forth(self):
         server = self.create_server('ipc://date')
         client = self.create_client('ipc://date')
