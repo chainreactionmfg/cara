@@ -682,37 +682,42 @@ class CapnpcCaraForwardDecls : public BasePythonGenerator {
     // Output all the fields of the enum in the forward decl.
     EnumForwardDecl enumDecl {schemaLoader, fd_, decl_stack_};
     enumDecl.traverse_enum_decl(schema, decl);
-    return false;
+    TRAVERSE(nested_decls, schema);
+    return true;
   }
   /*[[[cog
   decls = ['const', 'annotation', 'struct', 'interface']
   generics = ['struct', 'interface']
   for decl in decls:
     generic = decl in generics
-    cog.outl('bool pre_visit_%s_decl(const Schema&%s, const NestedNode& decl) {' % (
-        decl, ' schema' if generic else ''))
+    cog.outl('bool pre_visit_%s_decl(const Schema& schema, const NestedNode& decl) {' % decl)
     if generic:
       cog.outl('  doBranding("%s", schema, decl.getName());' % decl.title())
     else:
       cog.outl('  outputDecl("%s", decl.getName());' % decl.title())
-    cog.outl('  return false;')
+    cog.outl('  TRAVERSE(nested_decls, schema);')
+    cog.outl('  return true;')
     cog.outl('}')
   ]]]*/
-  bool pre_visit_const_decl(const Schema&, const NestedNode& decl) {
+  bool pre_visit_const_decl(const Schema& schema, const NestedNode& decl) {
     outputDecl("Const", decl.getName());
-    return false;
+    TRAVERSE(nested_decls, schema);
+    return true;
   }
-  bool pre_visit_annotation_decl(const Schema&, const NestedNode& decl) {
+  bool pre_visit_annotation_decl(const Schema& schema, const NestedNode& decl) {
     outputDecl("Annotation", decl.getName());
-    return false;
+    TRAVERSE(nested_decls, schema);
+    return true;
   }
   bool pre_visit_struct_decl(const Schema& schema, const NestedNode& decl) {
     doBranding("Struct", schema, decl.getName());
-    return false;
+    TRAVERSE(nested_decls, schema);
+    return true;
   }
   bool pre_visit_interface_decl(const Schema& schema, const NestedNode& decl) {
     doBranding("Interface", schema, decl.getName());
-    return false;
+    TRAVERSE(nested_decls, schema);
+    return true;
   }
   //[[[end]]]
   void doBranding(std::string&& type, Schema schema, Text::Reader&& name) {
