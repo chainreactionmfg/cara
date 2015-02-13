@@ -344,6 +344,7 @@ class BaseStruct(dict, metaclass=StructMeta):
     if isinstance(type(ret), DeclarationMeta):
       # Store the result if it's not a builtin that can't change.
       self.__setitem__(key, ret, field=field)
+      return self[key]
     return ret
 
   def ToDict(self, with_field_names=False):
