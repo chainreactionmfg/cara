@@ -33,7 +33,7 @@ kj::String to_py_array(T&& arr, char begin = '[', char end = ']') {
 }
 
 struct StringWithId {
-  uint id;
+  int64_t id;
   kj::String data;
   friend bool operator<(const StringWithId& a, const StringWithId& b) {
     return a.id < b.id;
@@ -162,7 +162,7 @@ class BasePythonGenerator : public BaseGenerator {
  protected:
   std::vector<std::string> decl_stack_;
 
-  std::vector<StringWithId> fields_;
+  std::vector<std::vector<StringWithId>> fields_stack_;
   std::vector<StringWithId> enumerants_;
   std::vector<StringWithId> methods_;
 
@@ -247,11 +247,16 @@ class BasePythonGenerator : public BaseGenerator {
 
   kj::String get_fields(std::string&& name) {
     std::vector<kj::String> fields;
-    std::sort(fields_.begin(), fields_.end());
-    for (auto &field : fields_) {
-      fields.emplace_back(kj::str(MODULE, name, field.data));
+    std::sort(fields_stack_.back().begin(), fields_stack_.back().end());
+    for (auto &field : fields_stack_.back()) {
+      if (field.data.startsWith(MODULE "Group") ||
+          field.data.startsWith(MODULE "Union")) {
+        fields.emplace_back(kj::mv(field.data));
+      } else {
+        fields.emplace_back(kj::str(MODULE, name, field.data));
+      }
     }
-    fields_.clear();
+    fields_stack_.pop_back();
     return to_py_array(fields);
   }
 
@@ -525,21 +530,65 @@ class BasePythonGenerator : public BaseGenerator {
     return false;
   }
 
+  bool pre_visit_struct_decl(const Schema&, const NestedNode&) {
+    fields_stack_.emplace_back();
+    return false;
+  }
+
   bool post_visit_struct_field_slot(
       const StructSchema& schema, const StructSchema::Field& field,
       const schema::Field::Slot::Reader&) {
     kj::String default_value;
     auto proto = field.getProto();
     if (proto.getSlot().getHadExplicitDefault()) {
-      TRAVERSE(value, schema, field.getType(), proto.getSlot().getDefaultValue());
+      TRAVERSE(value, schema, field.getType(),
+               proto.getSlot().getDefaultValue());
       default_value = kj::str(", default=", pop_back(last_value_));
     }
-    fields_.emplace_back(StringWithId {field.getIndex(), kj::str("(id=",
-          field.getIndex(), ", name=\"", field.getProto().getName(),
-          "\"", default_value, ", type=", pop_back(last_type_),
-          get_stored_annotations(), ")")});
+    fields_stack_.back().emplace_back(StringWithId{
+        field.getIndex(),
+        kj::str("(id=", field.getIndex(), ", name=\"",
+                field.getProto().getName(), "\"", default_value, ", type=",
+                pop_back(last_type_), get_stored_annotations(), ")")});
     return false;
   }
+
+  bool pre_visit_struct_field_group(const StructSchema&,
+                                     const StructSchema::Field&,
+                                     const schema::Field::Group::Reader&,
+                                     const Schema&) {
+    fields_stack_.emplace_back();
+    return false;
+  }
+
+  bool post_visit_struct_field_group(const StructSchema&,
+                                     const StructSchema::Field& field,
+                                     const schema::Field::Group::Reader&,
+                                     const Schema& groupSchema) {
+    // Groups and unions are only possible in structs, not method params.
+    TRAVERSE(annotations, groupSchema);
+    auto fields = get_fields("Field");
+    fields_stack_.back().emplace_back(StringWithId{
+        field.getIndex(),
+        kj::str(MODULE "Group(id=", field.getIndex(), ", name=\"",
+                field.getProto().getName(), "\", fields=", fields,
+                get_stored_annotations(), ")")});
+    return false;
+  }
+
+  bool pre_visit_struct_field_union(const StructSchema&) {
+    fields_stack_.emplace_back();
+    return false;
+  }
+
+  bool post_visit_struct_field_union(const StructSchema&) {
+    auto fields = get_fields("Field");
+    fields_stack_.back().emplace_back(
+        StringWithId{-1, kj::str(MODULE "Union(fields=", fields,
+                                 get_stored_annotations(), ")")});
+    return false;
+  }
+
 
   bool traverse_method(const Schema& schema, const InterfaceSchema::Method& method) override {
     auto methodProto = method.getProto();
@@ -565,6 +614,7 @@ class BasePythonGenerator : public BaseGenerator {
     // Params
     if (method.getParamType().getProto().getScopeId() == 0) {
       // Auto-generated 'struct'.
+      fields_stack_.emplace_back();
       TRAVERSE(param_list, interface, kj::str("_"), method.getParamType());
       line = kj::strTree(
           kj::mv(line), ", params=", get_fields("Param"));
@@ -578,6 +628,7 @@ class BasePythonGenerator : public BaseGenerator {
     // Results
     if (method.getResultType().getProto().getScopeId() == 0) {
       // Auto-generated 'struct'.
+      fields_stack_.emplace_back();
       TRAVERSE(param_list, interface, kj::str("_"), method.getResultType());
       line = kj::strTree(
           kj::mv(line), ", results=", get_fields("Param"));
@@ -594,7 +645,6 @@ class BasePythonGenerator : public BaseGenerator {
     methods_.emplace_back(StringWithId {method.getIndex(), line.flatten()});
     return false;
   }
-
 };
 
 class EnumForwardDecl : public BasePythonGenerator {
