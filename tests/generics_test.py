@@ -15,11 +15,11 @@ class GenericsTest(unittest.TestCase):
         assert instance.defaulted == "defaulteds"
         assert instance.field.field == struct()
         assert instance.ToDict(with_field_names=True) == {
-            'field': {'defaulted': 'unicorns'}
+            'field': {'defaulted': 'unicorns', 'field': {'field': {}}}
         }
         instance.defaulted = 'rainbows'
         assert instance.ToDict(with_field_names=True) == {
-            'field': {'defaulted': 'unicorns'},
+            'field': {'defaulted': 'unicorns', 'field': {'field': {}}},
             'defaulted': 'rainbows'
         }
         instance[b'defaulted'] = 'puppies'

@@ -1,7 +1,7 @@
 import unittest
 
 import cara
-from tests.basics_capnp import Basic, SimpleInterface
+from tests.basics_capnp import Basic, SimpleInterface, SemiAdvanced
 
 
 class BasicsTest(unittest.TestCase):
@@ -19,6 +19,18 @@ class BasicsTest(unittest.TestCase):
         nested = Basic({'list': [Basic({'field': 10})], 'ints': [5]})
         assert nested['list'].Get(field=10).field == 10
         assert str(nested['ints']) == 'List[Int32]([5])'
+
+    def test_union(self):
+        advanced = SemiAdvanced({'unnamed': 1, 'unionField': b'data'})
+        assert len(advanced.keys()) == 1
+        advanced.namedGroup.first = 'text'
+        advanced.namedUnion.this = 1
+        assert advanced.namedGroup.first == 'text'
+        assert advanced.namedUnion.this
+        assert not advanced.namedUnion.that
+        advanced.namedUnion.that = 2
+        assert not advanced.namedUnion.this
+        assert advanced.namedUnion.that
 
     def test_interface(self):
         iface = SimpleInterface({

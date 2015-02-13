@@ -13,6 +13,20 @@ struct Basic {
   ints @3 :List(Int32);
 }
 
+struct SemiAdvanced {
+  namedGroup :group {
+    first @0 :Text;
+  }
+  namedUnion :union {
+    this @1 :Int32;
+    that @2 :Int64;
+  }
+  union {
+    unnamed @3 :Int8;
+    unionField @4 :Data;
+  }
+}
+
 interface SimpleInterface {
   structOut @0 (input :Int32) -> Basic;
   structIn @1 Basic -> (output :Int32);

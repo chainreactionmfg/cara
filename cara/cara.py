@@ -18,6 +18,10 @@ Param = records.ImmutableRecord(
     'Param', ['id', 'name', 'type'], {'annotations': list})
 Enumerant = records.ImmutableRecord(
     'Enumerant', ['name', 'ordinal'], {'annotations': list})
+Group = records.ImmutableRecord(
+    'Group', ['id', 'name', 'fields'], {'annotations': list})
+Union = records.ImmutableRecord(
+    'Union', ['fields'], {'annotations': list})
 
 
 class BuiltinType(object):
@@ -218,10 +222,23 @@ class StructMeta(DeclarationMeta):
   def FinishDeclaration(cls, fields=None, annotations=None):
     """Put all Field instances into __fields__."""
     cls.__annotations__ = annotations or []
-    cls_fields = cls.__fields__ = {}
     fields = fields or []
+
+    # Unions are always the first field.
+    cls.__union_fields__ = set()
+    if fields and isinstance(fields[0], Union):
+        # Store the union field ID's, then act like they don't exist.
+        cls.__union_fields__ = {field.id for field in fields[0].fields}
+        fields[0:1] = fields[0].fields
+
+    cls_fields = cls.__fields__ = {}
     idfields = cls.__id_fields__ = [None] * len(fields)
     for field in fields:
+      if isinstance(field, Group):
+        struct = Struct('%s.%s' % (cls.__name__, field.name))
+        struct.FinishDeclaration(
+            fields=field.fields, annotations=field.annotations)
+        field = Field(id=field.id, name=field.name, type=struct)
       cls_fields[field.name] = field
       idfields[field.id] = field
 
@@ -243,7 +260,7 @@ class Field(records.ImmutableRecord(
   @property
   def default_value(self):
     if self.default is not None:
-      return self.default
+      return copy.copy(self.default)
     if not isinstance(self.type, BaseInterface):
       return self.type()
     # Interfaces have no default value.
@@ -265,6 +282,7 @@ class BaseStruct(dict, metaclass=StructMeta):
   def __init__(self, val=None):
     # val = {id: value} or {key: value}
     keep = {}
+    union_fields = type(self).__union_fields__
     for k, v in (val or {}).items():
       if not isinstance(k, int):
         # val's keys are strings, but we're being created, switch to ints
@@ -277,6 +295,10 @@ class BaseStruct(dict, metaclass=StructMeta):
           k = field.id
       else:
         field = self._get_field_from_id(k)
+      if k in union_fields and union_fields & set(keep.keys()):
+        # Remove other union fields.
+        for id in union_fields:
+          keep.pop(id, None)
       keep[k] = _ConvertToType(field.type, v)
     # the internal dict is a mapping of integer id's to values
     super().__init__(keep)
@@ -284,7 +306,7 @@ class BaseStruct(dict, metaclass=StructMeta):
   def __setattr__(self, attr, val):
     if attr in type(self).__fields__:
       field = type(self)._get_field_from_name(attr)
-      self[field.id] = _ConvertToType(field.type, val)
+      return self.__setitem__(field.id, val, field=field)
     else:
       raise AttributeError('Cannot set %s to %s on %s' % (attr, val, self))
 
@@ -297,18 +319,32 @@ class BaseStruct(dict, metaclass=StructMeta):
       item = field.id
     return super().__getitem__(item)
 
-  def __setitem__(self, item, val):
+  def __setitem__(self, item, val, field=None):
     if isinstance(item, bytes):
+      # str -> bytes
       item = item.decode('ascii')
     if item in type(self).__fields__:
-      field = type(self)._get_field_from_name(item)
-      return super().__setitem__(field.id, val)
-    elif item < len(type(self).__id_fields__):
-      return super().__setitem__(item, val)
+      # bytes -> int
+      if field is None:
+        field = type(self)._get_field_from_name(item)
+      item = field.id
+    if item < len(type(self).__id_fields__):
+      union_fields = type(self).__union_fields__
+      if item in union_fields and union_fields & set(self.keys()):
+        # Clear the other fields in the union first.
+        for id in union_fields:
+          self.pop(id, None)
+      field = type(self).__id_fields__[item]
+      return super().__setitem__(item, _ConvertToType(field.type, val))
     raise KeyError('Key %s does not exist' % item)
 
   def __missing__(self, key):
-    return type(self).__id_fields__[key].default_value
+    field = type(self).__id_fields__[key]
+    ret = field.default_value
+    if isinstance(type(ret), DeclarationMeta):
+      # Store the result if it's not a builtin that can't change.
+      self.__setitem__(key, ret, field=field)
+    return ret
 
   def ToDict(self, with_field_names=False):
     return {
