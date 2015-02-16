@@ -369,7 +369,10 @@ class BaseStruct(dict, metaclass=StructMeta):
   def _get_field_from_name(cls, name):
     if isinstance(name, bytes):
       name = name.decode('ascii')
-    return cls.__fields__[name]
+    field = cls.__fields__.get(name)
+    if field is None:
+      raise KeyError('%s has no field named %s' % (cls, name))
+    return field
 
   def __str__(self):
     data = ', '.join(
