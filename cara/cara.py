@@ -389,10 +389,17 @@ class BaseStruct(dict, metaclass=StructMeta):
     )
 
   def __eq__(self, other):
-    return self is other or (type(self) == type(other) and all(
+    if self is other:
+      return True
+    if not isinstance(other, type(self)):
+      try:
+        other = type(self)(other)
+      except Exception:
+        return False
+    return all(
         self[field.id] == other[field.id]
         for field in type(self).__id_fields__
-        if self[field.id] or other[field.id]))
+        if self[field.id] or other[field.id])
 
 
 class BaseList(list):
