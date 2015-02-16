@@ -261,7 +261,7 @@ class Field(records.ImmutableRecord(
   def default_value(self):
     if self.default is not None:
       return copy.copy(self.default)
-    if not isinstance(self.type, BaseInterface):
+    if not issubclass(self.type, (BaseEnum, BaseInterface)):
       return self.type()
     # Interfaces have no default value.
     return None
