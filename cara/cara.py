@@ -420,12 +420,28 @@ class BaseList(list):
   def Get(self, **kwargs):
     """Convenience function for getting an element of a particular type.
 
-    Only works for lists of Struct type.
+    Only works for lists of Struct type. Usage: list.Get(field__subfield=3)
     """
     if not issubclass(self.sub_type, BaseStruct):
       raise TypeError('Cannot use Get on a List of non-Struct types.')
-    return next(val for val in self
-                if all(val[attr] == kwarg for attr, kwarg in kwargs.items()))
+
+    def _CheckFunc(val):
+      for attr, value in kwargs.items():
+        if '__' not in attr:
+          if val[attr] != value:
+            return False
+          continue
+        # x.Get(a__b=5) -> Check .a.b == 5
+        attrs = attr.split('__')
+        # v = .a.b
+        local_v = val
+        for attr in attrs:
+          local_v = local_v[attr]
+        # Check v == 5
+        if local_v != value:
+          return False
+      return True
+    return next(val for val in self if _CheckFunc(val))
 
   @classmethod
   def ReplaceTypes(cls, template_map, memo=None):
