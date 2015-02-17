@@ -16,9 +16,19 @@ class BasicsTest(unittest.TestCase):
         assert str(Basic({b'field': 1})) == 'Basic({field: 1})'
 
     def test_list_methods(self):
-        nested = Basic({'list': [Basic({'field': 10})], 'ints': [5]})
+        nested = Basic({'list': [
+            Basic({'field': 4}),
+            Basic({'field': 10}),
+        ], 'ints': [5]})
         assert nested['list'].Get(field=10).field == 10
         assert str(nested['ints']) == 'List[Int32]([5])'
+
+    def test_nested_list_get(self):
+        nested = Basic({'list': [
+            {'nested': {'field': 5}, 'field': 5},
+            {'nested': {'field': 10}, 'field': 5},
+        ]})
+        assert nested.list.Get(field=5, nested__field=10).nested.field == 10
 
     def test_union(self):
         advanced = SemiAdvanced({'unnamed': 1, 'unionField': b'data'})

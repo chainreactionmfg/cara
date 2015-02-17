@@ -11,6 +11,7 @@ struct Basic {
   type @1 :Schema.Type;
   list @2 :List(Basic);
   ints @3 :List(Int32);
+  nested @4 :Basic;
 }
 
 struct SemiAdvanced {
