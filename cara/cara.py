@@ -82,7 +82,7 @@ def _ConvertToType(type, value):
 
 
 class BaseDeclaration(records.ImmutableRecord(
-        'BaseDeclaration', ['name'], {'annotations': list})):
+        'BaseDeclaration', ['name', 'id'], {'annotations': list})):
 
   def FinishDeclaration(self, **kwargs):
     """Called in the generated schema file."""
@@ -185,8 +185,8 @@ class DeclarationMeta(type):
     cls.__nested__ = nested
 
 
-def Struct(name):
-  return StructMeta(name, (BaseStruct,), {})
+def Struct(name, id):
+  return StructMeta(name, (BaseStruct,), {'id': id})
 
 
 # Since we're targetting msgpack, Struct is a dict, but with our special
@@ -204,7 +204,7 @@ class StructMeta(DeclarationMeta):
         'annotations': cls.__annotations__
     }
     cls.ApplyTemplatesToKwargs(kwargs, template_map, memo=memo)
-    new_decl = Struct(cls.__name__)
+    new_decl = Struct(cls.__name__, cls.id)
     new_decl.ApplyTemplatesToNested(cls.__nested__, template_map, memo=memo)
     if (kwargs['fields'] != cls.__id_fields__
             or kwargs['annotations'] != cls.__annotations__
@@ -235,7 +235,7 @@ class StructMeta(DeclarationMeta):
     idfields = cls.__id_fields__ = [None] * len(fields)
     for field in fields:
       if isinstance(field, Group):
-        struct = Struct('%s.%s' % (cls.__name__, field.name))
+        struct = Struct('%s.%s' % (cls.__name__, field.name), cls.id)
         struct.FinishDeclaration(
             fields=field.fields, annotations=field.annotations)
         field = Field(id=field.id, name=field.name, type=struct)
@@ -474,8 +474,8 @@ def List(sub_type):
   return new_type
 
 
-def Interface(name):
-  return InterfaceMeta(name, (BaseInterface,), {})
+def Interface(name, id):
+  return InterfaceMeta(name, (BaseInterface,), {'id': id})
 
 
 def _find_interface_base_class(cls, interface=None):
@@ -522,7 +522,7 @@ class InterfaceMeta(DeclarationMeta):
         'annotations': cls.__annotations__,
     }
     cls.ApplyTemplatesToKwargs(kwargs, template_map, memo=memo)
-    new_decl = Interface(cls.__name__)
+    new_decl = Interface(cls.__name__, cls.id)
     new_decl.ApplyTemplatesToNested(cls.__nested__, template_map, memo=memo)
     if (kwargs['methods'] != cls.__id_methods__
             or kwargs['superclasses'] != cls.__superclasses__
@@ -787,7 +787,8 @@ class BaseTemplated(BaseDeclaration):
             return str(type.cls)
         return type.name if hasattr(type, 'name') else str(type)
     new_decl = type(self).base_type(name='%s[%s]' % (
-        self.name, ', '.join(get_name(type) for _, type in local_tpl_map)))
+        self.name, ', '.join(get_name(type) for _, type in local_tpl_map)),
+        id=self.id)
     new_decl.__nested__ = generics.MARKER(
         'Nested classes are not available yet.')
     # Put it in the cache early so we can avoid any recursion problems from the
@@ -815,7 +816,8 @@ class TemplatedInterface(BaseTemplated):
 
 
 class TemplatedMethod(BaseTemplated):
-  required_attributes = tuple(set(Method.required_attributes) - {'name'})
+  required_attributes = tuple(set(Method.required_attributes)
+                              - set(BaseDeclaration.required_attributes))
   _finished = True
 
   def __getitem__(self, template_values):

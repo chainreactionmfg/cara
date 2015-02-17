@@ -686,17 +686,18 @@ class CapnpcCaraForwardDecls : public BasePythonGenerator {
   FILE* fd_;
 
   template<typename T>
-  void outputDecl(std::string&& type, T&& name,
+  void outputDecl(std::string&& type, T&& name, uint64_t id,
                   const std::vector<std::string>& templates = {}) {
     if (templates.size() != 0) {
       fprintf(
-          fd_, "%s = " MODULE "Templated%s(name=\"%s\", templates=%s)\n",
-          kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr(),
-          to_py_array(templates).cStr());
+          fd_, "%s = " MODULE "Templated%s(name=\"%s\", id=0x%lx, "
+          "templates=%s)\n", kj::strArray(decl_stack_, ".").cStr(),
+          type.c_str(), name.cStr(), id, to_py_array(templates).cStr());
     } else {
       fprintf(
-          fd_, "%s = " MODULE "%s(name=\"%s\")\n",
-          kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr());
+          fd_, "%s = " MODULE "%s(name=\"%s\", id=0x%lx)\n",
+          kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr(),
+          id);
     }
   }
 
@@ -742,41 +743,41 @@ class CapnpcCaraForwardDecls : public BasePythonGenerator {
     generic = decl in generics
     cog.outl('bool pre_visit_%s_decl(const Schema& schema, const NestedNode& decl) {' % decl)
     if generic:
-      cog.outl('  doBranding("%s", schema, decl.getName());' % decl.title())
+      cog.outl('  doBranding("%s", schema, decl.getName(), decl.getId());' % decl.title())
     else:
-      cog.outl('  outputDecl("%s", decl.getName());' % decl.title())
+      cog.outl('  outputDecl("%s", decl.getName(), decl.getId());' % decl.title())
     cog.outl('  TRAVERSE(nested_decls, schema);')
     cog.outl('  return true;')
     cog.outl('}')
   ]]]*/
   bool pre_visit_const_decl(const Schema& schema, const NestedNode& decl) {
-    outputDecl("Const", decl.getName());
+    outputDecl("Const", decl.getName(), decl.getId());
     TRAVERSE(nested_decls, schema);
     return true;
   }
   bool pre_visit_annotation_decl(const Schema& schema, const NestedNode& decl) {
-    outputDecl("Annotation", decl.getName());
+    outputDecl("Annotation", decl.getName(), decl.getId());
     TRAVERSE(nested_decls, schema);
     return true;
   }
   bool pre_visit_struct_decl(const Schema& schema, const NestedNode& decl) {
-    doBranding("Struct", schema, decl.getName());
+    doBranding("Struct", schema, decl.getName(), decl.getId());
     TRAVERSE(nested_decls, schema);
     return true;
   }
   bool pre_visit_interface_decl(const Schema& schema, const NestedNode& decl) {
-    doBranding("Interface", schema, decl.getName());
+    doBranding("Interface", schema, decl.getName(), decl.getId());
     TRAVERSE(nested_decls, schema);
     return true;
   }
   //[[[end]]]
-  void doBranding(std::string&& type, Schema schema, Text::Reader&& name) {
+  void doBranding(std::string&& type, Schema schema, Text::Reader&& name, uint64_t id) {
     auto&& proto = schema.getProto();
     std::vector<std::string> params;
     for (auto param : proto.getParameters()) {
       params.emplace_back(kj::str('"', param.getName(), '"').cStr());
     }
-    outputDecl(std::move(type), name, params);
+    outputDecl(std::move(type), name, id, params);
   }
 };
 
