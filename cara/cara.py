@@ -514,6 +514,9 @@ class InterfaceMeta(DeclarationMeta):
         method.results = results
         methods[i] = method
     kwargs['methods'] = methods
+    kwargs['superclasses'] = [
+        generics.ReplaceType(supercls, template_map, memo=memo)
+        for supercls in kwargs['superclasses']]
 
   def ReplaceTypes(cls, template_map, memo=None):
     kwargs = {

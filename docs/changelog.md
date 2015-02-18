@@ -17,6 +17,7 @@
 * Enums don't have empty default values.
 * Structs can do type coercion when doing equality checks. Struct() == {} can
   work.
+* ReplaceTypes works on superclasses too.
 
 ## 0.7.0
 
