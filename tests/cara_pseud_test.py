@@ -9,7 +9,7 @@ import zmq
 import cara
 from cara import cara_pseud
 from tests.cara_pseud_test_capnp import (
-    FooIface, BarIface, BazIface, ThreeIface)
+    FooIface, BarIface, BazIface, ThreeIface, Super, Inherit, InheritAcceptor)
 
 
 @pytest.fixture
@@ -171,6 +171,37 @@ class PseudTest(BasePseudTest):
         cb = yield BarIface(self.client).returnCb()
         yield cb.call(True)
         assert self.wait()
+
+    @tornado.testing.gen_test(timeout=0.1)
+    def test_inheritance(self):
+        yield self.create_client_server()
+
+        inherit_iface = {
+            'superMethod': lambda: self.stop('super'),
+            'inheritedMethod': lambda: self.stop('inherited'),
+            'second': lambda: self.stop('second'),
+            'third': lambda: self.stop('third'),
+            'overlapped': lambda: self.stop('overlapped'),
+        }
+
+        cara_pseud.register_interface(self.server, Inherit, inherit_iface)
+        yield Inherit(self.client).inheritedMethod()
+        assert self.wait() == 'inherited'
+        yield Inherit(self.client).superMethod()
+        assert self.wait() == 'super'
+
+        cara_pseud.register_interface(self.server, InheritAcceptor, {
+            'accept': lambda iface: self.stop(iface)
+        })
+        yield InheritAcceptor(self.client).accept(inherit_iface)
+        accepted = self.wait()
+        assert isinstance(accepted, cara_pseud.RemoteInterfaceClient)
+        yield accepted.superMethod()
+        assert self.wait() == 'super'
+        yield accepted.superMethod()
+        assert self.wait() == 'super'
+        yield accepted.inheritedMethod()
+        assert self.wait() == 'inherited'
 
 
 @pytest.mark.usefixtures('stream_mock')

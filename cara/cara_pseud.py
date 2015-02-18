@@ -5,6 +5,7 @@ from cara import cara
 from crmfg_utils import records
 
 import msgpack
+import pseud
 import tornado.concurrent
 
 RemoteInterfaceDescriptor = records.ImmutableRecord(
@@ -13,32 +14,33 @@ RemoteInterfaceDescriptor = records.ImmutableRecord(
 
 class RemoteInterfaceServer(records.Record('Wrapper', [], {'objs': dict})):
 
-  def registered(self, local_id, method_id, args, kwargs):
-    return self.objs[local_id][method_id](*args, **kwargs)
+  def call(self, local_id, iface_id, method_id, args, kwargs):
+    return self.objs[local_id][iface_id, method_id](*args, **kwargs)
 
   def register(self, local_id, obj):
     self.objs[local_id] = obj
 
 
 class RemoteInterfaceClient(records.ImmutableRecord(
-        'RemoteInterface', ['remote_id', 'client', 'methods', 'id_methods'])):
+        'RemoteInterface', ['remote_id', 'client', 'interface'])):
 
   @classmethod
   def FromDescriptor(cls, interface, descriptor):
-    return cls(
-        descriptor.remote_id, descriptor.client,
-        interface.__methods__, interface.__id_methods__)
+    return cls(descriptor.remote_id, descriptor.client, interface)
 
   def __getattr__(self, attr):
-      if isinstance(attr, int):
-          attr = self.id_methods[attr]
-      method = self.methods.get(attr)
+      iface_id, method = self.interface._get_method(attr)
       if method is None:
           raise AttributeError('%s has no attribute %s' % (self, attr))
-          super().__getattr__(attr)
 
       def ProxyMethod(*args, **kwargs):
-          return self.client.registered(self.remote_id, method.id, args, kwargs)
+          client = self.client
+          if client and isinstance(client, pseud.common.AttributeWrapper):
+              # The AttributeWrapper is a naughty object that modifies itself
+              # instead of returning a new object when we do 'client.call'.
+              client = pseud.common.AttributeWrapper(
+                  client.rpc, client.name or None, client.user_id)
+          return client.call(self.remote_id, iface_id, method.id, args, kwargs)
       return cara.BaseInterface._MethodWrapper(ProxyMethod, method)
   __getitem__ = __getattr__
 
@@ -68,7 +70,7 @@ def setup_server(server):
     }
 
     server.packer.translation_table = server_table
-    server.register_rpc(handler.registered, 'registered')
+    server.register_rpc(handler.call, 'call')
     return server
 
 
@@ -88,7 +90,7 @@ def setup_client(client):
         101: (RemoteInterfaceClient, iface_to_mp, mp_to_remote_iface),
     }
     client.packer.translation_table = client_table
-    client.register_rpc(handler.registered, 'registered')
+    client.register_rpc(handler.call, 'call')
     return client
 
 
@@ -167,12 +169,15 @@ def register_interface(server, interface=None, obj_or_cls=None):
             obj = interface(obj_or_cls)
         else:
             # Should be an instance of a class.
-            interface = cara._find_interface_base_class(obj_or_cls.__class__, interface)
+            interface = cara._find_interface_base_class(
+                obj_or_cls.__class__, interface)
             obj = interface(obj_or_cls)
 
-        for name, method in interface.__methods__.items():
-            func = getattr(obj, name)
-            server.register_rpc(func, name=name)
+        # interface is last since we want to override any overlapping names.
+        for iface in interface.__superclasses__ + (interface,):
+            for name, method in iface.__methods__.items():
+                func = getattr(obj, name)
+                server.register_rpc(func, name=name)
     if obj_or_cls is None:
         return decorator
     return decorator(obj_or_cls)

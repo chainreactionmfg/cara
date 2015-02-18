@@ -536,7 +536,6 @@ class InterfaceMeta(DeclarationMeta):
   def FinishDeclaration(cls, methods=None, superclasses=None, annotations=None):
     """Put all Method instances into __methods__."""
     cls.__superclasses__ = tuple(superclasses or ())
-    cls.__bases__ += cls.__superclasses__
     cls.__annotations__ = annotations or []
     cls_methods = cls.__methods__ = {}
     id_methods = cls.__id_methods__ = {}
@@ -558,8 +557,43 @@ class InterfaceMeta(DeclarationMeta):
   def __hash__(cls):
     return object.__hash__(cls)
 
+  def _get_method(cls, key):
+    """Get method for the given key.
+
+    Args:
+      key: Method ID, method name or (interface ID, method ID). If just method
+        ID or name, the interface ID is looked up. Otherwise, the interface ID
+        is used to get the correct method.
+    Returns: Interface ID, Method object.
+    """
+    if isinstance(key, tuple):
+      # (interface id, method id), for when a particular method is called.
+      id, method_id = key
+      if cls.id == id:
+        # For this class, so just let the rest of the method execute.
+        key = method_id
+      else:
+        # For a superclass, so return that early.
+        for supercls in cls.__superclasses__:
+          if supercls.id == id:
+            return supercls._get_method(method_id)
+
+    id = cls.id
+    if isinstance(key, int):
+      method = cls.__id_methods__.get(key)
+    else:
+      method = cls.__methods__.get(key)
+    if not method:
+      # Check superclasses.
+      for supercls in cls.__superclasses__:
+        id, method = supercls._get_method(key)
+        if method is not None:
+          break
+    return id, method
+
 
 class BaseInterface(metaclass=InterfaceMeta):
+  __slots__ = ()
   remote_type_registry = type_registry.TypeRegistry()
 
   def NewWrapper(cls, value):
@@ -607,41 +641,42 @@ class BaseInterface(metaclass=InterfaceMeta):
     return result
 
   def __getitem__(self, key):
-    if isinstance(key, int):
-      key = self.__id_methods__[key].name
-    method = self.__methods__.get(key)
-    if not method:
+    _, method = type(self)._get_method(key)
+    if method is None:
       raise KeyError(key)
+    return self._WrapMethod(method)
 
+  def __getattribute__(self, attr):
+    """Must be getattribute to catch attributes on subclasses."""
+    _, method = type(self)._get_method(attr)
+    if method is not None:
+      return self._WrapMethod(method)
+    return super().__getattribute__(attr)
+
+  def _WrapMethod(self, method):
     if isinstance(method, TemplatedMethod):
+      # Wrap TemplatedMethods after the templates are available.
       def _Wrapper(*templates):
-        return self._WrapMethod(key, method[templates])
+        return self._WrapMethod(method[templates])
       return generics.GetItemWrapper(_Wrapper)
-    else:
-      return self._WrapMethod(key, method)
 
-  def _WrapMethod(self, key, method):
     # Allow wrapping an object.
     if hasattr(self, '__wrapped__'):
       obj = self.__wrapped__
     else:
       obj = self
     if inspect.isfunction(obj):
+      # Allow wrapping a function.
       return self._MethodWrapper(obj, method)
     if obj is self:
         # skip our getattribute when we're a direct subclass.
-        func = super().__getattribute__(key)
+        func = super().__getattribute__(method.name)
     elif isinstance(obj, dict):
         # Allow wrapping a dict with functions instead of a class instance.
-        func = obj[key]
+        func = obj[method.name]
     else:
-        func = getattr(obj, key)
+        func = getattr(obj, method.name)
     return self._MethodWrapper(func, method)
-
-  def __getattribute__(self, attr):
-    if attr in type(self).__methods__:
-        return self[attr]
-    return super().__getattribute__(attr)
 
   @staticmethod
   def _MethodWrapper(func, method):

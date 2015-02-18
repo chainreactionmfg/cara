@@ -20,3 +20,19 @@ interface ThreeIface {
     returnIface @0 () -> (return :Simple);
     acceptIface @1 (accept :Simple) -> ();
 }
+
+interface Super {
+  superMethod @0 () -> ();
+  overlapped @1 () -> ();
+  second @2 () -> ();
+}
+
+interface Inherit extends (Super) {
+  inheritedMethod @0 () -> ();
+  third @1 () -> ();
+  overlapped @2 () -> ();
+}
+
+interface InheritAcceptor {
+  accept @0 (iface :Inherit) -> ();
+}
