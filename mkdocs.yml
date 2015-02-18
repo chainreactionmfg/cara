@@ -6,6 +6,7 @@ pages:
   - [interfaces.md, Interfaces]
   - [remote.md, Interfaces on the Wire]
   - [advanced_usage.md, Advanced Usage]
+  - [changelog.md, Changelog]
 theme: readthedocs
 
 site_url: http://cara.readthedocs.org/en/latest/
