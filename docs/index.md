@@ -3,7 +3,7 @@
 [![Build Status](https://img.shields.io/travis/chainreactionmfg/cara/master.svg)](https://travis-ci.org/chainreactionmfg/cara)
 [![Coverage Status](https://img.shields.io/coveralls/chainreactionmfg/cara/master.svg)](https://coveralls.io/r/chainreactionmfg/cara)
 [![Codacy Badge](https://img.shields.io/codacy/3cc5a370c923435e92b9ce1a7dbbbafe.svg)](https://www.codacy.com/public/fahhem/cara)
-[![Documentation Status](https://readthedocs.org/projects/cara/badge/?version=latest&style=plastic)](https://readthedocs.org/projects/cara/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/cara/badge/?version=latest&style=flat)](https://readthedocs.org/projects/cara/?badge=latest)
 [![PyPI Version](https://img.shields.io/pypi/v/cara.svg)](https://pypi.python.org/pypi/cara)
 [![PyPI License](https://img.shields.io/pypi/l/cara.svg)](https://pypi.python.org/pypi/cara)
 
