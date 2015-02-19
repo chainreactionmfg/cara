@@ -311,23 +311,48 @@ class BaseStruct(dict, metaclass=StructMeta):
       raise AttributeError('Cannot set %s to %s on %s' % (attr, val, self))
 
   def __getattr__(self, attr):
-    return self[attr]
+    try:
+      return self[attr]
+    except KeyError as e:
+      raise AttributeError(e)
 
+  # Override dict methods to do the name -> id mapping.
   def __getitem__(self, item):
     if not isinstance(item, int):
       field = self._get_field_from_name(item)
       item = field.id
     return super().__getitem__(item)
 
+  def get(self, item, default=None):
+    if not isinstance(item, int):
+      try:
+        field = self._get_field_from_name(item)
+      except KeyError:
+        return default
+      item = field.id
+    return super().get(item, default)
+
+  def __contains__(self, item):
+    if not isinstance(item, int):
+      try:
+        field = self._get_field_from_name(item)
+      except KeyError:
+        return False
+      item = field.id
+    return super().__contains__(item)
+
   def __setitem__(self, item, val, field=None):
     if isinstance(item, bytes):
-      # str -> bytes
+      # bytes -> str
       item = item.decode('ascii')
     if item in type(self).__fields__:
-      # bytes -> int
+      # str name -> int
       if field is None:
         field = type(self)._get_field_from_name(item)
       item = field.id
+    elif isinstance(item, str) and item.isdigit():
+      # str id -> int
+      item = int(item)
     if item < len(type(self).__id_fields__):
       union_fields = type(self).__union_fields__
       if item in union_fields and union_fields & set(self.keys()):
