@@ -194,6 +194,7 @@ setup(
     packages=['cara', 'cara.capnp'],
     description=description,
     long_description=long_description,
+    keywords='cara pseud capnp network rpc schema',
     version=VERSION,
     license='Apache 2.0',
     author='Fahrzin Hemmati',
