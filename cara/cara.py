@@ -442,7 +442,16 @@ class BaseList(list):
     return cls(args)
 
   def __init__(self, val=None):
-    super().__init__(self.sub_type(v) for v in (val or []))
+    super().__init__(_ConvertToType(self.sub_type, v) for v in (val or []))
+
+  def __setitem__(self, idx, val):
+    return super().__setitem__(idx, _ConvertToType(self.sub_type, val))
+
+  def append(self, val):
+    return super().append(_ConvertToType(self.sub_type, val))
+
+  def insert(self, idx, val):
+    return super().insert(idx, _ConvertToType(self.sub_type, val))
 
   def __str__(self):
     return '%s([%s])' % (type(self).__name__,
