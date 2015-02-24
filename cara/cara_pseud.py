@@ -177,6 +177,9 @@ def register_interface(server, interface=None, obj_or_cls=None):
         for iface in interface.__superclasses__ + (interface,):
             for name, method in iface.__methods__.items():
                 func = getattr(obj, name)
+                if isinstance(method, cara.TemplatedMethod):
+                    func = func.__getitem__(
+                        (cara.AnyPointer,) * len(method.templates))
                 server.register_rpc(func, name=name)
     if obj_or_cls is None:
         return decorator

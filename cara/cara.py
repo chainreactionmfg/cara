@@ -684,7 +684,7 @@ class BaseInterface(metaclass=InterfaceMeta):
   def _WrapMethod(self, method):
     if isinstance(method, TemplatedMethod):
       # Wrap TemplatedMethods after the templates are available.
-      def _Wrapper(*templates):
+      def _Wrapper(templates):
         return self._WrapMethod(method[templates])
       return generics.GetItemWrapper(_Wrapper)
 
