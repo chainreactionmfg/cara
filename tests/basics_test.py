@@ -84,3 +84,6 @@ class BasicsTest(unittest.TestCase):
         replaced_results = ReplacedInterface.__methods__['structOut'].results
         assert replaced_params == BasicReplacement
         assert replaced_results == BasicReplacement
+
+    def test_global_registry(self):
+        assert cara.GlobalTypeRegistry[0xf950b63201d11192] is Basic

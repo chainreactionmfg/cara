@@ -10,8 +10,8 @@ from setuptools.command.develop import develop
 from setuptools.command.test import test
 
 MAJOR = 0
-MINOR = 8
-MICRO = 1
+MINOR = 9
+MICRO = 0
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 
 with open('README.md') as readme:
@@ -130,8 +130,10 @@ class build_capnp_files(build):
 
     def compile_file(self, filename, target_dir):
         self.execute([
-            'capnp', 'compile', '-o', 'gen/capnpc-cara', filename,
-            '--src-prefix', os.path.dirname(filename)])
+            'capnp', 'compile', '-o', os.path.join('gen', 'capnpc-cara'),
+            '--src-prefix', os.path.dirname(filename),
+            '-I', 'cara',
+            filename])
         output = os.path.basename(filename).replace(b'.capnp', b'_capnp.py')
         output = output.replace(b'+', b'x').replace(b'-', b'_')
         self.move_file(output.decode('ascii'), target_dir)
@@ -150,6 +152,8 @@ class build_included_capnp(build_capnp_files):
         for filename in glob.glob(capnp_dir + b'/capnp/*.capnp'):
             # Then run capnp compile -ocara filename --src-prefix=dirname
             self.compile_file(filename, target)
+        self.compile_file(
+            os.path.join(b'cara', b'capnp', b'cara.capnp'), target)
 
 
 class build_test_capnp(build_capnp_files):

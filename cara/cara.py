@@ -23,6 +23,10 @@ Group = records.ImmutableRecord(
 Union = records.ImmutableRecord(
     'Union', ['fields'], {'annotations': list})
 
+# Add $Cara.registerGlobally to a struct or interface to put it here.
+# Registry of struct/interface ID to declaration.
+GlobalTypeRegistry = {}
+
 
 class BuiltinType(object):
   """A builtin type.
@@ -222,6 +226,9 @@ class StructMeta(DeclarationMeta):
   def FinishDeclaration(cls, fields=None, annotations=None):
     """Put all Field instances into __fields__."""
     cls.__annotations__ = annotations or []
+    if any(ann.annotation.id == 0xebd6c4912189be2c
+           for ann in cls.__annotations__):
+      GlobalTypeRegistry[cls.id] = cls
     fields = fields or []
 
     # Unions are always the first field.
@@ -565,6 +572,9 @@ class InterfaceMeta(DeclarationMeta):
     """Put all Method instances into __methods__."""
     cls.__superclasses__ = tuple(superclasses or ())
     cls.__annotations__ = annotations or []
+    if any(ann.annotation.id == 0xebd6c4912189be2c
+           for ann in cls.__annotations__):
+      GlobalTypeRegistry[cls.id] = cls
     cls_methods = cls.__methods__ = {}
     id_methods = cls.__id_methods__ = {}
     for method in methods or []:

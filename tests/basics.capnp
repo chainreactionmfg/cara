@@ -6,7 +6,9 @@ using Persistent = import "/capnp/persistent.capnp";
 using Rpc = import "/capnp/rpc.capnp";
 using TwoParty = import "/capnp/rpc-twoparty.capnp";
 
-struct Basic {
+using Cara = import "/capnp/cara.capnp";
+
+struct Basic @0xf950b63201d11192 $Cara.registerGlobally {
   field @0 :Int32;
   type @1 :Schema.Type;
   list @2 :List(Basic);

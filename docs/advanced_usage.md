@@ -1,5 +1,21 @@
 # Advanced Usage
 
+## Global registry of structs and interfaces.
+
+Adding an annotation to a struct or interface will add it to a registry in cara
+with all their IDs. This allows the benefits of being able to lookup certain
+types without registering all types.
+
+```capnp
+using Cara = import "/capnp/cara.capnp";
+struct StructName @<capnp id> $Cara.registerGlobally {}
+```
+
+```python
+import cara
+cara.GlobalTypeRegistery[<capnp id>].__name__ == 'StructName'
+```
+
 ## Replacing a struct or interface's implementation.
 
 Sometimes you want to replace how a struct or interface is handled in your
