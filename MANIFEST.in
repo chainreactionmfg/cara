@@ -6,6 +6,7 @@ include gen/.ycm_extra_conf.py
 include gen/dodo.py
 include docs/*.md
 include docs/mkdocs.yml
+include cara/capnp/cara.capnp
 include cara/capnp/generate.sh
 include tests/*.py
 include tests/*.capnp
