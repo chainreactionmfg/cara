@@ -636,6 +636,14 @@ class BaseInterface(metaclass=InterfaceMeta):
   __slots__ = ()
   remote_type_registry = type_registry.TypeRegistry()
 
+  class MethodResult(dict):
+      def __getattr__(self, attr):
+          """Delegate attributes to keys first."""
+          try:
+              return self[attr]
+          except KeyError:
+              return super().__getattr__(attr)
+
   def NewWrapper(cls, value):
     """Potentially creates an instance of cls.
 
@@ -720,37 +728,17 @@ class BaseInterface(metaclass=InterfaceMeta):
 
   @staticmethod
   def _MethodWrapper(func, method):
-    def _Wrapper(*args, **kwargs):
-      def _GetParam(name, params):
-          param = next((param for param in params if param.name == name), None)
-          if param is None:
-            raise TypeError('Param %s does not exist for method %s' % (
-                name, method.name))
-          return param
-      # Convert input params to proper types first.
-      if isinstance(method.params, list):
-        args = [_ConvertToType(param.type, arg)
-                for param, arg in zip(method.params, args)]
-        kwargs = {
-            name: _ConvertToType(_GetParam(name, method.params).type, arg)
-            for name, arg in kwargs.items()}
-      else:
-        # Only one input param, so force it to be
-        if args:
-          args = (_ConvertToType(method.params, args[0]),)
-        elif kwargs:
-          # kwargs doesn't make sense since the parameter doesn't have a name,
-          # unless the kwargs are actually for the input parameter.
-          args = (_ConvertToType(method.params, kwargs),)
-          kwargs = {}
-      result = func(*args, **kwargs)
-
-      # Convert result to proper types now.
+    def ConvertResult(result):
+      """Convert result to proper types."""
       if not isinstance(method.results, list):
+        # Single result struct.
         return _ConvertToType(method.results, result)
       if len(method.results) == 0:
+        # No result.
         return result
       if len(method.results) == 1:
+        # One result, so let it be unboxed. Useful since you can't put
+        # non-pointers as the result param.
         param = method.results[0]
         if (isinstance(result, dict)
             and len(result) == 1 and param.name in result):
@@ -775,8 +763,35 @@ class BaseInterface(metaclass=InterfaceMeta):
                             method.name, result, len(method.results)))
 
       # The result is solely a dict, so convert them.
-      return {param.name: _ConvertToType(param.type, result[param.name])
-              for param in method.results}
+      return BaseInterface.MethodResult(
+          {param.name: _ConvertToType(param.type, result[param.name])
+           for param in method.results})
+
+    def _Wrapper(*args, **kwargs):
+      def _GetParam(name, params):
+          param = next((param for param in params if param.name == name), None)
+          if param is None:
+            raise TypeError('Param %s does not exist for method %s' % (
+                name, method.name))
+          return param
+      # Convert input params to proper types first.
+      if isinstance(method.params, list):
+        args = [_ConvertToType(param.type, arg)
+                for param, arg in zip(method.params, args)]
+        kwargs = {
+            name: _ConvertToType(_GetParam(name, method.params).type, arg)
+            for name, arg in kwargs.items()}
+      else:
+        # Only one input param, so force it to be
+        if args:
+          args = (_ConvertToType(method.params, args[0]),)
+        elif kwargs:
+          # kwargs doesn't make sense since the parameter doesn't have a name,
+          # unless the kwargs are actually for the input parameter.
+          args = (_ConvertToType(method.params, kwargs),)
+          kwargs = {}
+      result = func(*args, **kwargs)
+      return _ConvertToType(ConvertResult, result)
     return _Wrapper
 
   def ToDict(self, with_field_names=False):
