@@ -292,17 +292,7 @@ class BaseStruct(dict, metaclass=StructMeta):
     keep = {}
     union_fields = type(self).__union_fields__
     for k, v in (val or {}).items():
-      if not isinstance(k, int):
-        # val's keys are strings, but we're being created, switch to ints
-        if k.isdigit():
-          # It was just the ID as a string, switch back to that.
-          k = int(k)
-          field = self._get_field_from_id(k)
-        else:
-          field = self._get_field_from_name(k)
-          k = field.id
-      else:
-        field = self._get_field_from_id(k)
+      k, field = type(self)._get_id_from_identifier(k)
       if k in union_fields and union_fields & set(keep.keys()):
         # Remove other union fields.
         for id in union_fields:
@@ -313,8 +303,8 @@ class BaseStruct(dict, metaclass=StructMeta):
 
   def __setattr__(self, attr, val):
     if attr in type(self).__fields__:
-      field = type(self)._get_field_from_name(attr)
-      return self.__setitem__(field.id, val, field=field)
+      id, field = type(self)._get_id_from_identifier(attr)
+      return self.__setitem__(id, val, field=field)
     else:
       raise AttributeError('Cannot set %s to %s on %s' % (attr, val, self))
 
@@ -326,50 +316,34 @@ class BaseStruct(dict, metaclass=StructMeta):
 
   # Override dict methods to do the name -> id mapping.
   def __getitem__(self, item):
-    if not isinstance(item, int):
-      field = self._get_field_from_name(item)
-      item = field.id
-    return super().__getitem__(item)
+    id, _ = type(self)._get_id_from_identifier(item, get_field=False)
+    return super().__getitem__(id)
 
   def get(self, item, default=None):
-    if not isinstance(item, int):
-      try:
-        field = self._get_field_from_name(item)
-      except KeyError:
-        return default
-      item = field.id
-    return super().get(item, default)
+    try:
+      id, _ = type(self)._get_id_from_identifier(item, get_field=False)
+    except KeyError:
+      return default
+    return super().get(id, default)
 
   def __contains__(self, item):
-    if not isinstance(item, int):
-      try:
-        field = self._get_field_from_name(item)
-      except KeyError:
-        return False
-      item = field.id
-    return super().__contains__(item)
+    try:
+      id, _ = type(self)._get_id_from_identifier(item, get_field=False)
+    except KeyError:
+      return False
+    return super().__contains__(id)
 
   def __setitem__(self, item, val, field=None):
-    if isinstance(item, bytes):
-      # bytes -> str
-      item = item.decode('ascii')
-    if item in type(self).__fields__:
-      # str name -> int
-      if field is None:
-        field = type(self)._get_field_from_name(item)
-      item = field.id
-    elif isinstance(item, str) and item.isdigit():
-      # str id -> int
-      item = int(item)
-    if item < len(type(self).__id_fields__):
-      union_fields = type(self).__union_fields__
-      if item in union_fields and union_fields & set(self.keys()):
-        # Clear the other fields in the union first.
-        for id in union_fields:
-          self.pop(id, None)
-      field = type(self).__id_fields__[item]
-      return super().__setitem__(item, _ConvertToType(field.type, val))
-    raise KeyError('Key %s does not exist' % item)
+    try:
+      id, field = type(self)._get_id_from_identifier(item)
+    except KeyError:
+      raise KeyError('Key %s does not exist' % item)
+    union_fields = type(self).__union_fields__
+    if id in union_fields and union_fields & set(self.keys()):
+      # Clear the other fields in the union first.
+      for union_id in union_fields:
+        self.pop(union_id, None)
+    return super().__setitem__(id, _ConvertToType(field.type, val))
 
   def __missing__(self, key):
     field = type(self).__id_fields__[key]
@@ -393,6 +367,22 @@ class BaseStruct(dict, metaclass=StructMeta):
 
         for k, v in self.items()
     }
+
+  @classmethod
+  def _get_id_from_identifier(cls, id, get_field=True):
+    if isinstance(id, bytes):
+      # bytes -> str
+      id = id.decode('ascii')
+    if isinstance(id, str) and id.isdigit():
+      # digit str id -> int
+      id = int(id)
+    if not isinstance(id, int):
+      # str id -> int
+      field = cls._get_field_from_name(id)
+      id = field.id
+    elif get_field:
+      field = cls._get_field_from_id(id)
+    return id, get_field and field
 
   @classmethod
   def _get_field_from_id(cls, id):
