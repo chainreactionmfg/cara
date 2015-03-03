@@ -4,23 +4,23 @@ import enum
 import inspect
 import sys
 
-from crmfg_utils import records
+import mutablerecords
 from . import generics
 from . import list_cache
 from . import type_registry
 from .generics import MethodTemplate  # noqa
 
-AnnotationValue = records.ImmutableRecord(
+AnnotationValue = mutablerecords.HashableRecord(
     'AnnotationValue', ['annotation', 'value'])
-Method = records.ImmutableRecord(
+Method = mutablerecords.HashableRecord(
     'Method', ['id', 'name', 'params', 'results'], {'annotations': list})
-Param = records.ImmutableRecord(
+Param = mutablerecords.HashableRecord(
     'Param', ['id', 'name', 'type'], {'annotations': list})
-Enumerant = records.ImmutableRecord(
+Enumerant = mutablerecords.HashableRecord(
     'Enumerant', ['name', 'ordinal'], {'annotations': list})
-Group = records.ImmutableRecord(
+Group = mutablerecords.HashableRecord(
     'Group', ['id', 'name', 'fields'], {'annotations': list})
-Union = records.ImmutableRecord(
+Union = mutablerecords.HashableRecord(
     'Union', ['fields'], {'annotations': list})
 
 # Add $Cara.registerGlobally to a struct or interface to put it here.
@@ -85,7 +85,7 @@ def _ConvertToType(type, value):
   return type(value)
 
 
-class BaseDeclaration(records.ImmutableRecord(
+class BaseDeclaration(mutablerecords.HashableRecord(
         'BaseDeclaration', ['name', 'id'], {'annotations': list})):
 
   def FinishDeclaration(self, **kwargs):
@@ -261,7 +261,7 @@ class StructMeta(DeclarationMeta):
     return object.__hash__(cls)
 
 
-class Field(records.ImmutableRecord(
+class Field(mutablerecords.HashableRecord(
     'Field', ['id', 'name', 'type'],
     {'annotations': list, 'default': None})):
   @property

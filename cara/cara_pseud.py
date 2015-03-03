@@ -2,17 +2,17 @@ import concurrent.futures
 import inspect
 
 from cara import cara
-from crmfg_utils import records
+import mutablerecords
 
 import msgpack
 import pseud
 import tornado.concurrent
 
-RemoteInterfaceDescriptor = records.ImmutableRecord(
+RemoteInterfaceDescriptor = mutablerecords.HashableRecord(
     'RemoteInterfaceDescriptor', ['remote_id', 'client'])
 
 
-class RemoteInterfaceServer(records.Record('Wrapper', [], {'objs': dict})):
+class RemoteInterfaceServer(mutablerecords.Record('Wrapper', [], {'objs': dict})):
 
   def call(self, local_id, iface_id, method_id, args, kwargs):
     return self.objs[local_id][iface_id, method_id](*args, **kwargs)
@@ -21,7 +21,7 @@ class RemoteInterfaceServer(records.Record('Wrapper', [], {'objs': dict})):
     self.objs[local_id] = obj
 
 
-class RemoteInterfaceClient(records.ImmutableRecord(
+class RemoteInterfaceClient(mutablerecords.HashableRecord(
         'RemoteInterface', ['remote_id', 'client', 'interface'])):
 
   @classmethod

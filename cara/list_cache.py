@@ -1,8 +1,8 @@
-from crmfg_utils import records
+import mutablerecords
 
 
-class ListCache(records.Record('ListCache', [],
-                               {'keys': list, 'values': list})):
+class ListCache(mutablerecords.Record('ListCache', [],
+                                      {'keys': list, 'values': list})):
   def __setitem__(self, key, value, key_idx=None):
     self.keys.append(key)
     self.values.append(value)

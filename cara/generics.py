@@ -1,10 +1,10 @@
 import copy
 
-from crmfg_utils import records
+import mutablerecords
 
-MARKER = records.ImmutableRecord('ObjectMarker', ['name'])
+MARKER = mutablerecords.HashableRecord('ObjectMarker', ['name'])
 NID = MARKER('Not in dict')
-InProgress = records.ImmutableRecord('InProgress', ['obj'])
+InProgress = mutablerecords.HashableRecord('InProgress', ['obj'])
 
 
 def ReplaceObject(obj, template_map, memo=None):
@@ -76,11 +76,11 @@ def ReplaceMaybeList(lst, template_map, memo=None):
   return ReplaceType(lst, template_map, memo=memo)
 
 
-Template = records.ImmutableRecord('Template', ['cls', 'id'])
-MethodTemplate = records.ImmutableRecord('MethodTemplate', ['id'])
+Template = mutablerecords.HashableRecord('Template', ['cls', 'id'])
+MethodTemplate = mutablerecords.HashableRecord('MethodTemplate', ['id'])
 
 
-class Templated(records.ImmutableRecord(
+class Templated(mutablerecords.HashableRecord(
         'Templated', ['cls', 'template_map'])):
   # self.template_map is a map from original to intermediary (or to final).
   def ReplaceTypes(self, template_map, memo=None):
@@ -126,7 +126,7 @@ def EnsureTuple(obj):
   return (obj,)
 
 
-class GetItemWrapper(records.ImmutableRecord('GetItemWrapper', ['func'])):
+class GetItemWrapper(mutablerecords.HashableRecord('GetItemWrapper', ['func'])):
 
   def __getitem__(self, item):
     return self.func(item)
