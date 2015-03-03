@@ -45,3 +45,19 @@ retrieve the phone number, address, or any other sensitive data.
 This works in this schema because by passing an interface to a client,
 permission to use that interface is implicitly granted. No further
 authentication is necessary and the client can use any interfaces received.
+
+## From pycapnp
+
+While the schema definition layer is exactly the same as with `pycapnp`, cara
+is agnostic as to the serialization and networking layer. This allows you to
+use whatever layers your project already uses, as well as experiment with
+others. The driving force behind cara was to use the best of every layer and
+not let any one layer dictate the others. With cara, you can do anything you
+wish.
+
+The one thing it doesn't support at the moment is zero-copy (de)serialization
+that pycapnp does. However, if your application needs zero-copy for speed, then
+you're not likely to be using Python anyway. However, zeromq and msgpack both
+have zero-copy solutions it their C++ implementations, getting you pretty close
+to capnp's claimed 0us times, without enforcing its ideas on how you allocate,
+set, and get your data.
