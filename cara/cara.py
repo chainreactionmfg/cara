@@ -449,7 +449,7 @@ class BaseList(list):
                          ', '.join(repr(item) for item in self))
   __repr__ = __str__
 
-  def Get(self, **kwargs):
+  def Get(self, *, _with_index=False, **kwargs):
     """Convenience function for getting an element of a particular type.
 
     Only works for lists of Struct type. Usage: list.Get(field__subfield=3)
@@ -473,7 +473,8 @@ class BaseList(list):
         if local_v != value:
           return False
       return True
-    return next(val for val in self if _CheckFunc(val))
+    return next((i, val) if _with_index else val
+                for i, val in enumerate(self) if _CheckFunc(val))
 
   @classmethod
   def ReplaceTypes(cls, template_map, memo=None):
