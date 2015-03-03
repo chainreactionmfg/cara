@@ -44,6 +44,10 @@ class RemoteInterfaceClient(mutablerecords.HashableRecord(
       return cara.BaseInterface._MethodWrapper(ProxyMethod, method)
   __getitem__ = __getattr__
 
+  def __deepcopy__(self, memo):
+    # Can't deep copy a remote client.
+    return super().__copy__()
+
 
 def setup_server(server):
     _RegisterPseudBackend()
