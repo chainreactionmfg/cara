@@ -86,7 +86,7 @@ def _ConvertToType(type, value):
 
 
 class BaseDeclaration(mutablerecords.HashableRecord(
-        'BaseDeclaration', ['name', 'id'], {'annotations': list})):
+        'BaseDeclaration', ['name', 'id', 'qualname'], {'annotations': list})):
 
   def FinishDeclaration(self, **kwargs):
     """Called in the generated schema file."""
@@ -189,8 +189,9 @@ class DeclarationMeta(type):
     cls.__nested__ = nested
 
 
-def Struct(name, id):
-  return StructMeta(name, (BaseStruct,), {'id': id})
+def Struct(name, id, qualname=''):
+    return StructMeta(
+        name, (BaseStruct,), {'id': id, '__qualname__': qualname or name})
 
 
 # Since we're targetting msgpack, Struct is a dict, but with our special
@@ -515,8 +516,9 @@ def List(sub_type):
   return new_type
 
 
-def Interface(name, id):
-  return InterfaceMeta(name, (BaseInterface,), {'id': id})
+def Interface(name, id, qualname=''):
+  return InterfaceMeta(
+      name, (BaseInterface,), {'id': id, '__qualname__': qualname or name})
 
 
 def _find_interface_base_class(cls, interface=None):
@@ -900,6 +902,7 @@ class TemplatedInterface(BaseTemplated):
 class TemplatedMethod(BaseTemplated):
   required_attributes = tuple(set(Method.required_attributes)
                               - set(BaseDeclaration.required_attributes))
+  qualname = ''  # Not necessary.
   _finished = True
 
   def __getitem__(self, template_values):

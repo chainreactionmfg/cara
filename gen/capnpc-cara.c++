@@ -161,6 +161,7 @@ class BasePythonGenerator : public BaseGenerator {
 
  protected:
   std::vector<std::string> decl_stack_;
+  kj::String module_;
 
   std::vector<std::vector<StringWithId>> fields_stack_;
   std::vector<StringWithId> enumerants_;
@@ -679,25 +680,28 @@ class EnumForwardDecl : public BasePythonGenerator {
 
 class CapnpcCaraForwardDecls : public BasePythonGenerator {
  public:
-  CapnpcCaraForwardDecls(SchemaLoader &schemaLoader, FILE* fd)
-    : BasePythonGenerator(schemaLoader), fd_(fd) {
+  CapnpcCaraForwardDecls(SchemaLoader &schemaLoader, FILE* fd, const kj::String& inputFilename)
+    : BasePythonGenerator(schemaLoader), fd_(fd), inputFilename_(inputFilename) {
   }
  private:
   FILE* fd_;
+  const kj::String &inputFilename_;
 
   template<typename T>
   void outputDecl(std::string&& type, T&& name, uint64_t id,
                   const std::vector<std::string>& templates = {}) {
+    auto declname = kj::strArray(decl_stack_, ".");
+    auto qualname = kj::str(inputFilename_, ".", declname);
     if (templates.size() != 0) {
       fprintf(
           fd_, "%s = " MODULE "Templated%s(name=\"%s\", id=0x%lx, "
-          "templates=%s)\n", kj::strArray(decl_stack_, ".").cStr(),
-          type.c_str(), name.cStr(), id, to_py_array(templates).cStr());
+          "templates=%s, qualname=\"%s\")\n", declname.cStr(),
+          type.c_str(), name.cStr(), id, to_py_array(templates).cStr(), qualname.cStr());
     } else {
       fprintf(
-          fd_, "%s = " MODULE "%s(name=\"%s\", id=0x%lx)\n",
-          kj::strArray(decl_stack_, ".").cStr(), type.c_str(), name.cStr(),
-          id);
+          fd_, "%s = " MODULE "%s(name=\"%s\", id=0x%lx, qualname=\"%s\")\n",
+          declname.cStr(), type.c_str(), name.cStr(),
+          id, qualname.cStr());
     }
   }
 
@@ -942,8 +946,8 @@ class CapnpcCara : public BaseGenerator {
   }
 
   bool pre_visit_file(const Schema& schema, const RequestedFile& requestedFile) override {
-    auto inputFilename = schema.getProto().getDisplayName();
-    kj::String outputFilename = kj::str(clean_filename(inputFilename), FILE_SUFFIX);
+    auto inputFilename = clean_filename(schema.getProto().getDisplayName());
+    kj::String outputFilename = kj::str(inputFilename, FILE_SUFFIX);
     fd_ = fopen(outputFilename.cStr(), "w");
 
     // Start the file
@@ -951,7 +955,7 @@ class CapnpcCara : public BaseGenerator {
     outputLine("");
     // Output 'forward decls' first.
     outputLine("# Forward declarations:");
-    CapnpcCaraForwardDecls decls(schemaLoader, fd_);
+    CapnpcCaraForwardDecls decls(schemaLoader, fd_, inputFilename);
     decls.traverse_file(schema, requestedFile);
 
     outputLine("");
