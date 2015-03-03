@@ -11,7 +11,7 @@ from setuptools.command.test import test
 
 MAJOR = 0
 MINOR = 10
-MICRO = 1
+MICRO = 2
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 
 with open('README.md') as readme:
@@ -218,7 +218,6 @@ setup(
     ],
     install_requires=[
         'mutablerecords',
-        'tornado',
     ],
     extras_require={
         'pseud': ['pseud[Tornado]>=0.1.0'],
