@@ -11,7 +11,7 @@ from setuptools.command.test import test
 
 MAJOR = 0
 MINOR = 10
-MICRO = 0
+MICRO = 1
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 
 with open('README.md') as readme:
@@ -217,7 +217,7 @@ setup(
         ('bin', ['gen/capnpc-cara']),
     ],
     install_requires=[
-        'crmfg-utils',
+        'mutablerecords',
         'tornado',
     ],
     extras_require={
