@@ -31,7 +31,7 @@ First, generate the code from your .capnp files:
 
 Then import them:
 
-    import my_structs
+    import my_structs_capnp
 
 ### Example
 
@@ -47,11 +47,11 @@ my_structs.capnp
 
 Python usage
 
-    import my_structs
+    import my_structs_capnp
 
-    my_structs.MyStruct({'field': 'some text for here'})
+    my_structs_capnp.MyStruct({'field': 'some text for here'})
     # -- or --
-    m = my_struct.MyStruct.Create(field='some different text')
+    m = my_structs_capnp.MyStruct.Create(field='some different text')
 
     # All the classes masquerade as python builtins, like dict:
     msgpack.packb(m) == b'\x81\x00\xb3some different text'
@@ -90,7 +90,7 @@ my_ifaces.capnp
 Python usage:
 
     from cara import cara_pseud
-    from my_ifaces import SimpleEcho, BackAndForth
+    from my_ifaces_capnp import SimpleEcho, BackAndForth
 
     @tornado.gen.coroutine
     def create_server():
@@ -148,7 +148,7 @@ Python usage:
 ## Field Shrinking
 
     # Notice there's no mention of 'field' in the result:
-    m = my_structs.MyStruct({'field': 'some text for here'})
+    m = my_structs_capnp.MyStruct({'field': 'some text for here'})
     msgpack.packb(m) == b'\x81\x00\xb3some different text'
     # Yet it's there when we pack the object directly.
     m = {'field': 'some different text'}
@@ -159,11 +159,11 @@ of their names. This will only be an issue when sending the packed bytes over
 to another system that isn't using cara. If you send it back into cara, it'll
 unpack the fields correctly and you can use it like the original pieces.
 
-    original = my_structs.MyStruct.Create(nested={'integer': 2})
+    original = my_structs_capnp.MyStruct.Create(nested={'integer': 2})
     packed = msgpack.packb(original)
     unpacked = msgpack.unpackb(packed)
     # --> {1: {0: 2}}
-    result = my_structs.MyStruct(unpacked)
+    result = my_structs_capnp.MyStruct(unpacked)
     # --> MyStruct({nested: NestedStruct({integer: 2})})
 
 This allows us to serialize a struct into a much smaller bytestring, especially
