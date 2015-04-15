@@ -11,7 +11,7 @@ from setuptools.command.test import test
 
 MAJOR = 0
 MINOR = 10
-MICRO = 2
+MICRO = 3
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
 
 with open('README.md') as readme:
