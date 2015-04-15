@@ -148,9 +148,11 @@ Python usage:
 ## Field Shrinking
 
     # Notice there's no mention of 'field' in the result:
+    m = my_structs.MyStruct({'field': 'some text for here'})
+    msgpack.packb(m) == b'\x81\x00\xb3some different text'
+    # Yet it's there when we pack the object directly.
     m = {'field': 'some different text'}
     msgpack.packb(m) == b'\x81\xa5field\xb3some different text'
-    # Yet there it is!
 
 The difference is because a cara Struct uses the ordinals of the fields instead
 of their names. This will only be an issue when sending the packed bytes over
