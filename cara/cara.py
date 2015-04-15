@@ -768,7 +768,7 @@ class BaseInterface(metaclass=InterfaceMeta):
                 for param, res in zip(method.results, result)}
 
       if (not isinstance(result, dict)
-          or len(result) != len(method.results)):
+          and len(result) != len(method.results)):
         raise TypeError('Multiple output parameters for %s requires a list, '
                         'tuple, or dict to be returned with the right number '
                         'of elements (%s given, %d args needed)' % (
@@ -777,7 +777,7 @@ class BaseInterface(metaclass=InterfaceMeta):
       # The result is solely a dict, so convert them.
       return BaseInterface.MethodResult(
           {param.name: _ConvertToType(param.type, result[param.name])
-           for param in method.results})
+           for param in method.results if param.name in result})
 
     def _Wrapper(*args, **kwargs):
       def _GetParam(name, params):
