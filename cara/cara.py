@@ -363,7 +363,9 @@ class BaseStruct(dict, metaclass=StructMeta):
 
         # Get a value.
         v.ToDict(with_field_names=with_field_names)
-        if isinstance(v, (BaseStruct, BaseInterface)) else v
+        if isinstance(v, (BaseStruct, BaseInterface)) else
+        v.ToList(with_field_names=with_field_names)
+        if isinstance(v, BaseList) else v
 
         for k, v in self.items()
     }
@@ -448,6 +450,16 @@ class BaseList(list):
     return '%s([%s])' % (type(self).__name__,
                          ', '.join(repr(item) for item in self))
   __repr__ = __str__
+
+  def ToList(self, with_field_names=False):
+    return [
+        v.ToDict(with_field_names=with_field_names)
+        if isinstance(v, (BaseStruct, BaseInterface)) else
+        v.ToList(with_field_names=with_field_names)
+        if isinstance(v, BaseList) else v
+
+        for v in self
+    ]
 
   def Get(self, *, _with_index=False, **kwargs):
     """Convenience function for getting an element of a particular type.
